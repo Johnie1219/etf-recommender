@@ -50,7 +50,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "app.db")
 SESSION_COOKIE = "etf_session"
 # 로그인 없이 열어둘 경로(로그인/회원가입 화면·API, 아이콘·매니페스트)
-_OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest"}
+_OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest", "/healthz"}
 
 
 def get_db():
@@ -508,6 +508,12 @@ _MANIFEST = {
 def manifest():
     return JSONResponse(_MANIFEST, media_type="application/manifest+json")
 
+
+@app.get("/healthz")
+def healthz():
+    """헬스체크(인프라용). 로그인 없이 접근 가능 — 모니터링/깨우기 핑에 사용."""
+    return {"ok": True, "yfinance": _YF_OK}
+
 # ---------------------------------------------------------------------------
 # 1) 추천 대상 ETF 고정 풀 (대표 미국 ETF)
 #    fallback 값(yield/ret1y/vol)은 yfinance 실패 시에만 사용하는 보수적 기본값.
@@ -568,6 +574,20 @@ def _clamp(x, lo, hi):
     return max(lo, min(hi, x))
 
 
+def _downsample(series, n):
+    """가격 시리즈를 스파크라인용으로 약 n개 점으로 줄인다(마지막 값 포함)."""
+    try:
+        vals = [float(v) for v in series.tolist()]
+        if len(vals) <= n:
+            return [round(v, 2) for v in vals]
+        step = len(vals) / float(n)
+        out = [vals[int(i * step)] for i in range(n)]
+        out[-1] = vals[-1]  # 최신가 보존
+        return [round(v, 2) for v in out]
+    except Exception:
+        return None
+
+
 # ---------------------------------------------------------------------------
 # 2) yfinance 로 실시간 지표 계산 (실패 시 폴백)
 #    - ret1y: 최근 1년 가격 수익률(%)
@@ -615,6 +635,9 @@ def fetch_metrics(ticker: str):
                     "vol": round(float(vol), 2),
                     "yield": round(float(div_yield), 2),
                     "price": round(price, 2),
+                    "low52": round(float(closes.min()), 2),
+                    "high52": round(float(closes.max()), 2),
+                    "spark": _downsample(closes, 24),
                     "source": "yfinance",
                 }
                 _METRIC_CACHE[ticker] = (time.time(), result)  # 실시간 결과만 캐시
@@ -629,6 +652,9 @@ def fetch_metrics(ticker: str):
         "vol": base["vol"],
         "yield": base["yield"],
         "price": None,
+        "low52": None,
+        "high52": None,
+        "spark": None,
         "source": "fallback",
     }
 
@@ -845,6 +871,9 @@ def recommend(
             "yield": m["yield"],
             "price": m["price"],
             "price_krw": price_krw,
+            "low52": m.get("low52"),
+            "high52": m.get("high52"),
+            "spark": m.get("spark"),
             "source": m["source"],
             "scores": sc,
             "score": round(score, 1),

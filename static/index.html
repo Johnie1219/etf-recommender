@@ -254,6 +254,13 @@
   .skel { background: linear-gradient(90deg,#ececef,#f6f6f8,#ececef); background-size: 200% 100%;
     animation: sh 1.2s infinite; border-radius: 6px; }
   .skel-line { height: 12px; margin: 9px 0; }
+  /* 스파크라인 + 52주 범위 바 */
+  .viz { display: flex; align-items: center; gap: 14px; margin: 10px 0 2px; }
+  .spark { flex-shrink: 0; }
+  .r52 { flex: 1; min-width: 0; }
+  .r52bar { position: relative; height: 4px; background: var(--line); border-radius: 2px; }
+  .r52dot { position: absolute; top: -3px; width: 10px; height: 10px; border-radius: 50%; background: var(--blue); transform: translateX(-50%); }
+  .r52lab { display: flex; justify-content: space-between; font-size: 10px; color: var(--sub); margin-top: 5px; }
   .w40 { width: 40%; } .w60 { width: 60%; } .w90 { width: 90%; }
   @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   .metrics { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
@@ -376,6 +383,7 @@
             <input type="number" id="tPrice" placeholder="매수단가($)" step="any" min="0" />
             <button type="submit" class="pill" id="tAdd">추가</button>
           </form>
+          <div class="chartbox" id="allocBox" hidden><canvas id="allocChart" height="200"></canvas></div>
           <div id="holdings"></div>
           <div id="tradeTotal"></div>
           <details id="tradeListWrap" style="margin-top:10px;" hidden>
@@ -412,6 +420,7 @@
 const API = '';
 const state = { risk: 'neutral', goal: 'dividend', dividends: 'all', minYield: '0', top: '0', sort: 'score', ran: false };
 let chart = null;
+let allocChart = null;
 let poolList = [];  // 현재 종목 목록(티커·분류) — 테마 빠른 선택에 사용
 let favorites = new Set();  // 내 즐겨찾기 티커
 
@@ -793,6 +802,29 @@ function retClass(n) { return (n === null || n === undefined) ? '' : (n >= 0 ? '
 function hhmm(dt) { return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0'); }
 let lastData = null, lastFetchedAt = null;
 
+// 미니 차트(스파크라인) — 야후/구글 파이낸스/Finviz 벤치마킹. 상승=빨강/하락=파랑(한국식)
+function sparkSvg(spark, ret) {
+  if (!spark || spark.length < 2) return '';
+  const w = 110, h = 30, pad = 2;
+  const min = Math.min.apply(null, spark), max = Math.max.apply(null, spark), rng = (max - min) || 1;
+  const pts = spark.map(function (v, i) {
+    const x = pad + i * (w - 2 * pad) / (spark.length - 1);
+    const y = h - pad - ((v - min) / rng) * (h - 2 * pad);
+    return x.toFixed(1) + ',' + y.toFixed(1);
+  }).join(' ');
+  const color = (ret === null || ret === undefined) ? '#0066cc' : (ret >= 0 ? '#c0392b' : '#1565c0');
+  return '<svg class="spark" width="' + w + '" height="' + h + '" viewBox="0 0 ' + w + ' ' + h + '">' +
+    '<polyline points="' + pts + '" fill="none" stroke="' + color + '" stroke-width="1.6" stroke-linejoin="round"/></svg>';
+}
+// 52주 범위 바 — 야후/Finviz. 현재가가 저점~고점 어디인지
+function range52(r) {
+  if (r.low52 == null || r.high52 == null || r.price == null) return '';
+  const lo = r.low52, hi = r.high52, p = r.price;
+  const pos = Math.max(0, Math.min(100, (p - lo) / ((hi - lo) || 1) * 100));
+  return '<div class="r52"><div class="r52bar"><div class="r52dot" style="left:' + pos.toFixed(0) + '%"></div></div>' +
+    '<div class="r52lab"><span>$' + lo + '</span><span>52주 범위</span><span>$' + hi + '</span></div></div>';
+}
+
 // 결과 카드 1장 (hero=1등 강조)
 function cardHtml(r, hero) {
   const badge = hero ? '<span class="herobadge">🏆 1위</span> ' : '';
@@ -805,6 +837,7 @@ function cardHtml(r, hero) {
       '</div>' +
     '</div>' +
     '<div class="pc"><div class="pro">👍 ' + r.pro + '</div><div class="con">⚠️ ' + r.con + '</div></div>' +
+    ((r.spark || r.low52 != null) ? '<div class="viz">' + sparkSvg(r.spark, r.ret1y) + range52(r) + '</div>' : '') +
     '<div class="metrics">' +
       '<div class="m"><span>현재가</span><b>' + (r.price === null ? '—' : '$' + r.price) +
         (r.price_krw !== null ? ' <span style="color:var(--sub);font-weight:500">(약 ' + won(r.price_krw) + ')</span>' : '') + '</b></div>' +
@@ -1061,6 +1094,7 @@ async function renderTrades() {
   const pdata = await fetchPrices(tickers);
   const fx = pdata.fx, rate = fx.rate, divs = loadDiv();
   let totCost = 0, totVal = 0, haveAll = true;
+  const alloc = [];
   const cards = tickers.map(function (tk) {
     const a = agg[tk], avg = a.cost / a.qty, cur = pdata.prices[tk];
     totCost += a.cost;
@@ -1071,6 +1105,7 @@ async function renderTrades() {
     } else {
       const val = a.qty * cur, pnl = val - a.cost, pct = a.cost > 0 ? pnl / a.cost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
       totVal += val;
+      alloc.push({ tk: tk, val: val });
       const yld = pdata.yields[tk] || 0, predDiv = a.cost * yld / 100, actDiv = parseFloat(divs[tk]) || 0;
       const acc = predDiv > 0 ? (actDiv / predDiv * 100) : null;
       right = '<span class="hpnl ' + cls + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
@@ -1084,6 +1119,7 @@ async function renderTrades() {
     return '<div class="hold"><div class="htop"><span class="htk">' + tk + '</span>' + right + '</div>' + body + '</div>';
   }).join('');
   wrap.innerHTML = cards;
+  drawAlloc(alloc);
   if (totVal > 0) {
     const pnl = totVal - totCost, pct = totCost > 0 ? pnl / totCost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
     totalEl.innerHTML = '<div class="ttotal">합계 — 원금 약 ' + won(totCost * rate) + ' → 평가 약 ' + won(totVal * rate) +
@@ -1095,6 +1131,29 @@ async function renderTrades() {
   listEl.innerHTML = trades.slice().reverse().map(function (t) {
     return '<div class="trow"><span>' + t.date + ' · ' + t.ticker + ' · ' + t.qty + '주 @ $' + t.price + '</span><a data-del-trade="' + t.id + '">삭제</a></div>';
   }).join('');
+}
+
+// 보유 종목 평가액 배분 도넛 (Trading212/퍼스널캐피털 벤치마킹)
+const ALLOC_COLORS = ['#0066cc', '#34a0e0', '#5ec3c3', '#7bd389', '#f4b942', '#f47e42', '#c0392b', '#9b59b6', '#6e6e73', '#1565c0'];
+function drawAlloc(alloc) {
+  const box = document.getElementById('allocBox');
+  const ctx = document.getElementById('allocChart');
+  if (allocChart) { allocChart.destroy(); allocChart = null; }
+  if (!box || !ctx || typeof Chart === 'undefined' || alloc.length < 2) { if (box) box.hidden = true; return; }
+  box.hidden = false;
+  allocChart = new Chart(ctx, {
+    type: 'doughnut',
+    data: {
+      labels: alloc.map(function (a) { return a.tk; }),
+      datasets: [{ data: alloc.map(function (a) { return Math.round(a.val); }),
+        backgroundColor: alloc.map(function (a, i) { return ALLOC_COLORS[i % ALLOC_COLORS.length]; }),
+        borderWidth: 0 }]
+    },
+    options: {
+      responsive: true, maintainAspectRatio: false, cutout: '62%',
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, color: '#6e6e73' } } }
+    }
+  });
 }
 
 // 배당 입력(change) / 거래 삭제(click) — 이벤트 위임

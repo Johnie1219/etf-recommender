@@ -569,9 +569,62 @@ ETF_POOL = [
     {"ticker": "XLB", "name": "소재 섹터", "cat": "섹터", "yield": 1.6, "ret1y": 21.1, "vol": 17.5},
     {"ticker": "XLRE", "name": "리츠(부동산) 섹터", "cat": "섹터", "yield": 3.2, "ret1y": 8.7, "vol": 18.0},
     {"ticker": "XLC", "name": "커뮤니케이션서비스 섹터", "cat": "섹터", "yield": 1.3, "ret1y": 7.1, "vol": 19.0},
+    # ------------------------------------------------------------------
+    # 아래 확장분의 yield/ret1y/vol 은 대략적인 폴백 추정값이다(yfinance 실패 시에만 사용).
+    # 실시간(yfinance) 데이터가 있으면 항상 그 값을 쓰고 source="yfinance"로 표시한다.
+    # ------------------------------------------------------------------
+    # 성장(추가)
+    {"ticker": "QQQM", "name": "나스닥100(저보수)", "cat": "성장", "yield": 0.6, "ret1y": 20.0, "vol": 22.0},
+    {"ticker": "SPLG", "name": "S&P 500(저보수)", "cat": "성장", "yield": 1.3, "ret1y": 14.0, "vol": 17.0},
+    # 배당 — 커버드콜·고배당(추가)
+    {"ticker": "JEPI", "name": "JP모건 커버드콜(S&P)", "cat": "배당", "yield": 7.5, "ret1y": 10.0, "vol": 10.0},
+    {"ticker": "JEPQ", "name": "JP모건 커버드콜(나스닥)", "cat": "배당", "yield": 9.5, "ret1y": 18.0, "vol": 14.0},
+    {"ticker": "QYLD", "name": "나스닥100 커버드콜", "cat": "배당", "yield": 11.5, "ret1y": 12.0, "vol": 13.0},
+    {"ticker": "DIVO", "name": "배당+커버드콜", "cat": "배당", "yield": 4.5, "ret1y": 12.0, "vol": 12.0},
+    {"ticker": "SPYD", "name": "S&P500 고배당", "cat": "배당", "yield": 4.4, "ret1y": 8.0, "vol": 15.0},
+    # 채권(추가)
+    {"ticker": "LQD", "name": "투자등급 회사채", "cat": "채권", "yield": 4.5, "ret1y": 3.0, "vol": 8.0},
+    {"ticker": "HYG", "name": "하이일드(고수익) 회사채", "cat": "채권", "yield": 6.0, "ret1y": 8.0, "vol": 8.0},
+    {"ticker": "TIP", "name": "미국 물가연동국채", "cat": "채권", "yield": 3.5, "ret1y": 4.0, "vol": 6.0},
+    # 분산 — 대체자산(추가)
+    {"ticker": "SLV", "name": "은(silver)", "cat": "분산", "yield": 0.0, "ret1y": 20.0, "vol": 25.0},
+    {"ticker": "DBC", "name": "원자재 바스켓", "cat": "분산", "yield": 0.0, "ret1y": 5.0, "vol": 16.0},
+    {"ticker": "ACWI", "name": "전세계 주식(선진+신흥)", "cat": "분산", "yield": 1.8, "ret1y": 12.0, "vol": 16.0},
+    # 테마 — 반도체·AI·2차전지·클린에너지·바이오
+    {"ticker": "SOXX", "name": "미국 반도체", "cat": "테마", "yield": 0.8, "ret1y": 35.0, "vol": 28.0},
+    {"ticker": "SMH", "name": "반도체(밴엑)", "cat": "테마", "yield": 0.5, "ret1y": 45.0, "vol": 30.0},
+    {"ticker": "IGV", "name": "미국 소프트웨어", "cat": "테마", "yield": 0.0, "ret1y": 25.0, "vol": 26.0},
+    {"ticker": "SKYY", "name": "클라우드 컴퓨팅", "cat": "테마", "yield": 0.0, "ret1y": 22.0, "vol": 26.0},
+    {"ticker": "BOTZ", "name": "로봇·AI", "cat": "테마", "yield": 0.3, "ret1y": 20.0, "vol": 28.0},
+    {"ticker": "ARKK", "name": "ARK 혁신성장", "cat": "테마", "yield": 0.0, "ret1y": 30.0, "vol": 45.0},
+    {"ticker": "LIT", "name": "리튬·2차전지", "cat": "테마", "yield": 1.0, "ret1y": -5.0, "vol": 30.0},
+    {"ticker": "DRIV", "name": "전기차·자율주행", "cat": "테마", "yield": 1.0, "ret1y": 15.0, "vol": 24.0},
+    {"ticker": "ICLN", "name": "클린에너지", "cat": "테마", "yield": 1.5, "ret1y": -5.0, "vol": 28.0},
+    {"ticker": "TAN", "name": "태양광", "cat": "테마", "yield": 0.5, "ret1y": -10.0, "vol": 35.0},
+    {"ticker": "IBB", "name": "바이오테크", "cat": "테마", "yield": 0.3, "ret1y": 10.0, "vol": 22.0},
+    {"ticker": "XBI", "name": "바이오테크(중소형)", "cat": "테마", "yield": 0.2, "ret1y": 8.0, "vol": 28.0},
+    # 국가·지역
+    {"ticker": "EWY", "name": "한국", "cat": "국가", "yield": 2.0, "ret1y": 5.0, "vol": 22.0},
+    {"ticker": "EWJ", "name": "일본", "cat": "국가", "yield": 2.0, "ret1y": 12.0, "vol": 16.0},
+    {"ticker": "INDA", "name": "인도", "cat": "국가", "yield": 0.7, "ret1y": 15.0, "vol": 18.0},
+    {"ticker": "MCHI", "name": "중국", "cat": "국가", "yield": 2.5, "ret1y": 20.0, "vol": 25.0},
+    {"ticker": "EWZ", "name": "브라질", "cat": "국가", "yield": 6.0, "ret1y": 5.0, "vol": 28.0},
 ]
 
 POOL_BY_TICKER = {e["ticker"]: e for e in ETF_POOL}
+
+# 테마(카테고리)별 한 줄 설명 — 화면에서 구분·이해를 돕는다(투자 권유 아님).
+CAT_DESC = {
+    "성장": "지수·대형 성장주 중심. 장기 우상향을 기대하되 가격 변동은 감수.",
+    "배당": "배당(현금흐름) 중심. 커버드콜형은 고배당이지만 주가 상승은 제한적.",
+    "채권": "안정·이자 중심. 금리가 오르면 가격이 약세일 수 있음.",
+    "분산": "전세계·금·원자재 등으로 분산. 한 자산 쏠림을 줄임.",
+    "섹터": "미국 11개 산업별. 업황에 따라 변동이 큼.",
+    "테마": "반도체·AI·2차전지 등 미래 테마. 기대가 큰 만큼 변동·쏠림도 큼.",
+    "국가": "특정 나라 주식에 집중. 환율·정치·경제 영향이 큼.",
+}
+# 화면 표시 순서
+CAT_ORDER = ["성장", "배당", "채권", "분산", "섹터", "테마", "국가"]
 
 # 간단한 메모리 캐시 (티커 -> (저장시각, 결과)).
 # - 실시간(yfinance) 결과만 캐시한다. 폴백값은 캐시하지 않아
@@ -811,7 +864,11 @@ def make_pros_cons(cat, m):
 @app.get("/api/etfs")
 def list_etfs():
     """추천 대상 풀 메타데이터 (계산 없이 가벼움)."""
-    return {"etfs": [{"ticker": e["ticker"], "name": e["name"], "cat": e["cat"]} for e in ETF_POOL]}
+    return {
+        "etfs": [{"ticker": e["ticker"], "name": e["name"], "cat": e["cat"]} for e in ETF_POOL],
+        "cat_desc": CAT_DESC,
+        "cat_order": CAT_ORDER,
+    }
 
 
 @app.get("/api/recommend")

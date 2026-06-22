@@ -143,6 +143,9 @@
   #checksDetails .caret { color: var(--sub); transition: transform .15s ease; }
   #checksDetails[open] .caret { transform: rotate(180deg); }
   #selCount { color: var(--blue); font-weight: 600; }
+  .catdesc { font-size: 12px; color: var(--sub); line-height: 1.5; margin-top: 10px; min-height: 1px; }
+  .chkgroup { margin-top: 12px; }
+  .chkhead { font-size: 12px; font-weight: 600; color: var(--blue); margin: 8px 0 6px; }
 
   /* 저장·공유 */
   .saverow { display: flex; gap: 8px; }
@@ -331,14 +334,17 @@
         <div class="tabpanel active" data-panel="picks">
           <div class="group">
             <p class="label">테마 (빠른 선택)</p>
-            <div class="seg seg-6" id="catSeg">
+            <div class="seg seg-4" id="catSeg">
               <button class="pill active" data-cat="전체">전체</button>
               <button class="pill" data-cat="성장">성장</button>
               <button class="pill" data-cat="배당">배당</button>
               <button class="pill" data-cat="채권">채권</button>
               <button class="pill" data-cat="분산">분산</button>
               <button class="pill" data-cat="섹터">섹터</button>
+              <button class="pill" data-cat="테마">테마</button>
+              <button class="pill" data-cat="국가">국가</button>
             </div>
+            <div id="catDesc" class="catdesc"></div>
           </div>
 
           <div class="group">
@@ -348,7 +354,7 @@
                 <a id="selAll">전체 선택</a>
                 <a id="selNone">전체 해제</a>
               </div>
-              <div class="checks" id="checks"></div>
+              <div id="checks"></div>
             </details>
           </div>
         </div>
@@ -441,12 +447,13 @@ const RISK_LABEL = { conservative: '안정형', neutral: '중립형', aggressive
 // 서버(/api/etfs)에 연결 못 할 때 목록이라도 보이게 하는 비상용 폴백.
 // 실제 수치/점수는 항상 서버에서 계산한다(여기엔 티커·분류만 둠).
 const POOL_FALLBACK = [
-  ['VOO','성장'],['VTI','성장'],['QQQ','성장'],['VUG','성장'],['SCHG','성장'],
-  ['SCHD','배당'],['VYM','배당'],['DGRO','배당'],['HDV','배당'],['VIG','배당'],
-  ['BND','채권'],['AGG','채권'],['TLT','채권'],['SHY','채권'],['BNDX','채권'],
-  ['VT','분산'],['VEA','분산'],['VWO','분산'],['VNQ','분산'],['GLD','분산'],
-  ['XLK','섹터'],['XLF','섹터'],['XLV','섹터'],['XLE','섹터'],['XLY','섹터'],
-  ['XLP','섹터'],['XLI','섹터'],['XLU','섹터'],['XLB','섹터'],['XLRE','섹터'],['XLC','섹터'],
+  ['VOO','성장'],['VTI','성장'],['QQQ','성장'],['VUG','성장'],['SCHG','성장'],['QQQM','성장'],['SPLG','성장'],
+  ['SCHD','배당'],['VYM','배당'],['DGRO','배당'],['HDV','배당'],['VIG','배당'],['JEPI','배당'],['JEPQ','배당'],['QYLD','배당'],['DIVO','배당'],['SPYD','배당'],
+  ['BND','채권'],['AGG','채권'],['TLT','채권'],['SHY','채권'],['BNDX','채권'],['LQD','채권'],['HYG','채권'],['TIP','채권'],
+  ['VT','분산'],['VEA','분산'],['VWO','분산'],['VNQ','분산'],['GLD','분산'],['SLV','분산'],['DBC','분산'],['ACWI','분산'],
+  ['XLK','섹터'],['XLF','섹터'],['XLV','섹터'],['XLE','섹터'],['XLY','섹터'],['XLP','섹터'],['XLI','섹터'],['XLU','섹터'],['XLB','섹터'],['XLRE','섹터'],['XLC','섹터'],
+  ['SOXX','테마'],['SMH','테마'],['IGV','테마'],['SKYY','테마'],['BOTZ','테마'],['ARKK','테마'],['LIT','테마'],['DRIV','테마'],['ICLN','테마'],['TAN','테마'],['IBB','테마'],['XBI','테마'],
+  ['EWY','국가'],['EWJ','국가'],['INDA','국가'],['MCHI','국가'],['EWZ','국가'],
 ].map(function (x) { return { ticker: x[0], cat: x[1] }; });
 
 const banner = document.getElementById('banner');
@@ -499,12 +506,18 @@ document.getElementById('catSeg').addEventListener('click', function (e) {
   b.classList.add('active');
   favOnly = false; updateFavBtn();
   const cat = b.dataset.cat;
+  showCatDesc(cat);
   document.querySelectorAll('#checks input').forEach(function (c) {
     const item = poolList.find(function (x) { return x.ticker === c.value; });
     c.checked = (cat === '전체') || (item && item.cat === cat);
   });
   if (state.ran) run();
 });
+function showCatDesc(cat) {
+  const el = document.getElementById('catDesc');
+  if (!el) return;
+  el.textContent = (cat && cat !== '전체' && catDescMap[cat]) ? '💡 ' + catDescMap[cat] : '';
+}
 
 // --- 즐겨찾기만 보기 토글 (맨 위, 항상 보임) ---
 let favOnly = false;
@@ -534,15 +547,25 @@ document.getElementById('favTop').addEventListener('click', function () {
   if (state.ran) run();
 });
 
-// --- 종목 체크박스 그리기 ---
+let catDescMap = {}, catOrder = ['성장', '배당', '채권', '분산', '섹터', '테마', '국가'];
+
+// --- 종목 체크박스 그리기 (카테고리별로 구분) ---
 function renderChecks(list) {
   poolList = list;
-  document.getElementById('checks').innerHTML = list.map(function (e) {
-    return '<label class="chk">' +
-      '<input type="checkbox" value="' + e.ticker + '" checked />' +
-      '<span class="tk">' + e.ticker + '</span>' +
-      '<span style="color:var(--sub)">' + e.cat + '</span>' +
-      '</label>';
+  const byCat = {};
+  list.forEach(function (e) { (byCat[e.cat] || (byCat[e.cat] = [])).push(e); });
+  const cats = catOrder.filter(function (c) { return byCat[c]; })
+    .concat(Object.keys(byCat).filter(function (c) { return catOrder.indexOf(c) < 0; }));
+  document.getElementById('checks').innerHTML = cats.map(function (cat) {
+    const items = byCat[cat].map(function (e) {
+      return '<label class="chk">' +
+        '<input type="checkbox" value="' + e.ticker + '" checked />' +
+        '<span class="tk">' + e.ticker + '</span>' +
+        '<span style="color:var(--sub);font-size:11px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap;">' + (e.name || '') + '</span>' +
+        '</label>';
+    }).join('');
+    return '<div class="chkgroup"><div class="chkhead">' + cat + ' (' + byCat[cat].length + ')</div>' +
+      '<div class="checks">' + items + '</div></div>';
   }).join('');
   updateSelCount();
 }
@@ -561,6 +584,8 @@ async function loadPool() {
     const r = await fetch(API + '/api/etfs');
     if (!r.ok) throw new Error('status ' + r.status);
     const d = await r.json();
+    if (d.cat_desc) catDescMap = d.cat_desc;
+    if (d.cat_order) catOrder = d.cat_order;
     renderChecks(d.etfs);
     hideBanner();
   } catch (err) {

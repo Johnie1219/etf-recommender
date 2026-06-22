@@ -194,7 +194,14 @@
   .card .name { font-weight: 600; font-size: 16px; }
   .card .name small { color: var(--sub); font-weight: 500; font-size: 12px; margin-left: 6px; }
   .card .score { font-size: 22px; font-weight: 700; color: var(--blue); white-space: nowrap; }
-  .card .reason { font-size: 13px; color: var(--sub); margin: 6px 0 12px; }
+  .card .reason { font-size: 13px; color: var(--sub); margin: 8px 0 0; }
+  .pc { margin: 8px 0 12px; font-size: 13px; line-height: 1.6; }
+  .pc .pro { color: var(--ink); }
+  .pc .con { color: var(--sub); }
+  .more { background: none; border: none; color: var(--blue); font-size: 12px; font-weight: 600;
+    font-family: inherit; cursor: pointer; padding: 8px 0 0; }
+  .details { margin-top: 8px; }
+  .details .dscore { font-size: 12px; color: var(--sub); }
   .metrics { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
   .metrics b { font-weight: 600; }
   .metrics .m span { color: var(--sub); margin-right: 5px; }
@@ -581,10 +588,17 @@ async function toggleFav(ticker, btn) {
     }
   } catch (e) {}
 }
-// 결과 카드의 ★ 클릭 (이벤트 위임)
+// 결과 카드의 ★ 클릭 / 점수 근거 펼치기 (이벤트 위임)
 document.getElementById('result').addEventListener('click', function (e) {
   const s = e.target.closest('.star');
-  if (s) { toggleFav(s.dataset.ticker, s); }
+  if (s) { toggleFav(s.dataset.ticker, s); return; }
+  const more = e.target.closest('.more');
+  if (more) {
+    const det = more.nextElementSibling;
+    const open = det.hasAttribute('hidden');
+    if (open) { det.removeAttribute('hidden'); more.textContent = '점수 근거 접기 ▴'; }
+    else { det.setAttribute('hidden', ''); more.textContent = '점수 근거 자세히 ▾'; }
+  }
 });
 
 // 종목을 손으로 바꾸면 '테마' 빠른선택 강조는 헷갈리니 해제(전체일 때만 유지)
@@ -696,7 +710,10 @@ function render(d) {
           '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
         '</div>' +
       '</div>' +
-      '<div class="reason">' + r.reason + '</div>' +
+      '<div class="pc">' +
+        '<div class="pro">👍 ' + r.pro + '</div>' +
+        '<div class="con">⚠️ ' + r.con + '</div>' +
+      '</div>' +
       '<div class="metrics">' +
         '<div class="m"><span>현재가</span><b>' + (r.price === null ? '—' : '$' + r.price) +
           (r.price_krw !== null ? ' <span style="color:var(--sub);font-weight:500">(약 ' + won(r.price_krw) + ')</span>' : '') + '</b></div>' +
@@ -704,7 +721,11 @@ function render(d) {
         '<div class="m"><span>원화 환산 1년</span><b>' + pct(r.ret1y_krw) + '</b></div>' +
         '<div class="m"><span>변동성</span><b>' + r.vol + '%</b></div>' +
         '<div class="m"><span>배당수익률</span><b>' + r.yield + '%</b></div>' +
-        '<div class="m"><span>세부점수</span><b>수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + '</b></div>' +
+      '</div>' +
+      '<button class="more" data-more>점수 근거 자세히 ▾</button>' +
+      '<div class="details" hidden>' +
+        '<div class="dscore">세부점수 — 수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + ' (각 0~100)</div>' +
+        '<div class="reason">' + r.reason + '</div>' +
       '</div>' +
       '<div class="links">' +
         '<a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a>' +

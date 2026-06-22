@@ -663,7 +663,7 @@ def fetch_metrics(ticker: str):
 #                폴백이면 변동을 알 수 없어 None (원화 환산 수익률은 표시 안 함).
 #    환율 자체도 늘 변동하며, 여기 값은 참고용이다.
 # ---------------------------------------------------------------------------
-_FX_FALLBACK_RATE = 1385.0  # USD/KRW 대략값(폴백)
+_FX_FALLBACK_RATE = 1500.0  # USD/KRW 대략값(폴백)
 _FX_CACHE = {}
 
 
@@ -673,24 +673,26 @@ def fetch_fx():
         return cached[1]
 
     if _YF_OK:
-        try:
-            hist = yf.Ticker("KRW=X").history(period="1y", timeout=5)
-            if hist is not None and len(hist) > 30:
-                closes = hist["Close"].dropna()
-                rate = float(closes.iloc[-1])
-                rate_1y = float(closes.iloc[0])
-                change1y = (rate / rate_1y - 1.0) * 100.0 if rate_1y > 0 else None
-                result = {
-                    "rate": round(rate, 2),
-                    "change1y": round(change1y, 2) if change1y is not None else None,
-                    "source": "yfinance",
-                }
-                _FX_CACHE["KRW"] = (time.time(), result)
-                return result
-        except Exception:
-            pass
+        # KRW=X 우선, 실패 시 USDKRW=X 로 재시도
+        for sym in ("KRW=X", "USDKRW=X"):
+            try:
+                hist = yf.Ticker(sym).history(period="1y", timeout=5)
+                if hist is not None and len(hist) > 30:
+                    closes = hist["Close"].dropna()
+                    rate = float(closes.iloc[-1])
+                    rate_1y = float(closes.iloc[0])
+                    change1y = (rate / rate_1y - 1.0) * 100.0 if rate_1y > 0 else None
+                    result = {
+                        "rate": round(rate, 2),
+                        "change1y": round(change1y, 2) if change1y is not None else None,
+                        "source": "yfinance",
+                    }
+                    _FX_CACHE["KRW"] = (time.time(), result)
+                    return result
+            except Exception:
+                continue
 
-    # 폴백: 대략 환율만, 변동률은 알 수 없음
+    # 폴백: 기본값 1500, 변동률은 알 수 없음
     return {"rate": _FX_FALLBACK_RATE, "change1y": None, "source": "fallback"}
 
 
@@ -756,6 +758,42 @@ def make_reason(cat, sc, w):
     return f"{cat} ETF. {names[top]}이(가) 목표·성향에 가장 잘 맞음 ({', '.join(parts)})"
 
 
+# 카테고리별 주의점(단점 후보가 없을 때 사용). 실제 지표에서 뽑은 장단점과 함께 보조로 표시.
+_CAT_CAVEAT = {
+    "채권": "금리가 오르면 가격이 약세일 수 있음",
+    "섹터": "특정 업종에 집중되어 업황 영향이 큼",
+    "분산": "해외시장·환율의 영향을 받음",
+    "배당": "고배당일수록 성장(주가 상승)은 더딜 수 있음",
+    "성장": "성장주는 하락장에서 낙폭이 클 수 있음",
+}
+
+
+def make_pros_cons(cat, m):
+    """종목의 실제 지표(수익률·변동성·배당)에서 장점 1줄/단점 1줄을 뽑는다.
+    숫자는 그대로 인용하며 지어내지 않는다(정직성)."""
+    ret, vol, y = m["ret1y"], m["vol"], m["yield"]
+    pros, cons = [], []
+    if ret >= 15:
+        pros.append(f"최근 1년 수익률이 높음 (+{ret:.0f}%)")
+    if y >= 3:
+        pros.append(f"배당수익률이 높음 ({y:.1f}%)")
+    if vol <= 12:
+        pros.append(f"변동성이 낮아 비교적 안정적 ({vol:.0f}%)")
+    if not pros:
+        pros.append(f"1년 수익률 {ret:+.0f}% · 변동성 {vol:.0f}% · 배당 {y:.1f}%")
+
+    if vol >= 20:
+        cons.append(f"변동성이 큼 ({vol:.0f}%) — 가격 출렁임에 유의")
+    if ret < 0:
+        cons.append(f"최근 1년은 손실 ({ret:.0f}%)")
+    if y < 1:
+        cons.append(f"배당이 거의 없음 ({y:.1f}%)")
+    if not cons:
+        cons.append(_CAT_CAVEAT.get(cat, "단기 가격 변동은 늘 있을 수 있음"))
+
+    return pros[0], cons[0]
+
+
 @app.get("/api/etfs")
 def list_etfs():
     """추천 대상 풀 메타데이터 (계산 없이 가벼움)."""
@@ -819,6 +857,7 @@ def recommend(
         if m["source"] == "yfinance" and fx["change1y"] is not None:
             ret1y_krw = round(((1 + m["ret1y"] / 100.0) * (1 + fx["change1y"] / 100.0) - 1) * 100.0, 2)
 
+        pro, con = make_pros_cons(meta["cat"], m)
         rows.append({
             "ticker": t,
             "name": meta["name"],
@@ -833,6 +872,8 @@ def recommend(
             "scores": sc,
             "score": round(score, 1),
             "reason": make_reason(meta["cat"], sc, w),
+            "pro": pro,
+            "con": con,
         })
 
     rows.sort(key=lambda r: r["score"], reverse=True)

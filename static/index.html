@@ -82,7 +82,7 @@
     header p { font-size: 13px; }
     #banner { margin: 8px 16px 0; }
     .panel { padding: 18px 16px; border-radius: 14px; }
-    .pill { padding: 11px 18px; font-size: 15px; }
+    .pill { padding: 12px 6px; font-size: 14px; }
     .tab { padding: 13px 6px; font-size: 15px; }
     .checks { grid-template-columns: 1fr 1fr; gap: 12px 14px; }
     .chk { padding: 4px 0; font-size: 14px; }
@@ -118,18 +118,26 @@
   .tabpanel { display: none; }
   .tabpanel.active { display: block; }
 
-  .seg { display: flex; gap: 8px; flex-wrap: wrap; }
+  /* 알약 버튼: 그리드로 칸을 균일하게 (글자 길이와 무관하게 같은 너비) */
+  .seg { display: grid; gap: 8px; }
+  .seg-3 { grid-template-columns: repeat(3, 1fr); }
+  .seg-4 { grid-template-columns: repeat(4, 1fr); }
+  .seg-6 { grid-template-columns: repeat(3, 1fr); }
   .pill {
     border: 1px solid var(--line);
     background: #fff;
     color: var(--ink);
     border-radius: 999px;
-    padding: 9px 16px;
+    padding: 10px 8px;
     font-size: 14px;
     font-weight: 500;
     cursor: pointer;
     transition: all .15s ease;
     font-family: inherit;
+    text-align: center;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .pill:hover { border-color: #c7c7cc; }
   .pill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
@@ -211,7 +219,7 @@
         <div class="tabpanel active" data-panel="cond">
           <div class="group">
             <p class="label">위험 성향</p>
-            <div class="seg" id="riskSeg">
+            <div class="seg seg-3" id="riskSeg">
               <button class="pill" data-v="conservative">안정형</button>
               <button class="pill active" data-v="neutral">중립형</button>
               <button class="pill" data-v="aggressive">공격형</button>
@@ -220,7 +228,7 @@
 
           <div class="group">
             <p class="label">투자 목표</p>
-            <div class="seg" id="goalSeg">
+            <div class="seg seg-3" id="goalSeg">
               <button class="pill" data-v="growth">성장</button>
               <button class="pill" data-v="dividend">배당</button>
               <button class="pill active" data-v="diversified">분산</button>
@@ -232,7 +240,7 @@
         <div class="tabpanel" data-panel="picks">
           <div class="group">
             <p class="label">테마 (빠른 선택)</p>
-            <div class="seg" id="catSeg">
+            <div class="seg seg-6" id="catSeg">
               <button class="pill active" data-cat="전체">전체</button>
               <button class="pill" data-cat="성장">성장</button>
               <button class="pill" data-cat="배당">배당</button>
@@ -256,17 +264,17 @@
         <div class="tabpanel" data-panel="filter">
           <div class="group">
             <p class="label">배당 여부</p>
-            <div class="seg" id="divSeg">
+            <div class="seg seg-3" id="divSeg">
               <button class="pill active" data-v="all">전체</button>
-              <button class="pill" data-v="yes">배당 주는 것만</button>
+              <button class="pill" data-v="yes">배당주만</button>
               <button class="pill" data-v="no">무배당만</button>
             </div>
           </div>
 
           <div class="group" id="minYieldGroup">
             <p class="label">최소 배당수익률</p>
-            <div class="seg" id="minYieldSeg">
-              <button class="pill active" data-v="0">제한 없음</button>
+            <div class="seg seg-4" id="minYieldSeg">
+              <button class="pill active" data-v="0">없음</button>
               <button class="pill" data-v="2">2%+</button>
               <button class="pill" data-v="3">3%+</button>
               <button class="pill" data-v="4">4%+</button>
@@ -275,7 +283,7 @@
 
           <div class="group">
             <p class="label">표시 개수</p>
-            <div class="seg" id="topSeg">
+            <div class="seg seg-3" id="topSeg">
               <button class="pill" data-v="5">Top 5</button>
               <button class="pill" data-v="10">Top 10</button>
               <button class="pill active" data-v="0">전체</button>

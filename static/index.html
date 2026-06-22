@@ -287,6 +287,8 @@
         <div class="tabs" id="tabs">
           <button class="tab active" data-tab="picks">종목</button>
           <button class="tab" data-tab="filter">필터</button>
+          <button class="tab" data-tab="trade">실거래</button>
+          <button class="tab" data-tab="save">저장</button>
         </div>
 
         <!-- 탭 1: 종목 -->
@@ -345,13 +347,34 @@
           </div>
         </div>
 
-        <div class="group" style="margin-top:6px;">
-          <p class="label">저장·공유</p>
-          <div class="saverow">
-            <button class="pill" id="saveBtn">현재 설정 저장</button>
-            <button class="pill" id="shareBtn">공유 링크 복사</button>
+        <!-- 탭: 실거래 -->
+        <div class="tabpanel" data-panel="trade" id="tradePanel">
+          <p class="hint" style="margin-top:0;">실제 매수 기록(이 기기에 저장)을 넣으면 현재가 대비 평가손익을 원화로 보여줍니다.</p>
+          <form id="tradeForm" class="tradeform">
+            <input type="date" id="tDate" />
+            <select id="tTicker"></select>
+            <input type="number" id="tQty" placeholder="수량" step="any" min="0" />
+            <input type="number" id="tPrice" placeholder="매수단가($)" step="any" min="0" />
+            <button type="submit" class="pill" id="tAdd">추가</button>
+          </form>
+          <div id="holdings"></div>
+          <div id="tradeTotal"></div>
+          <details id="tradeListWrap" style="margin-top:10px;" hidden>
+            <summary style="font-size:13px;color:var(--blue);cursor:pointer;">거래 내역 보기</summary>
+            <div id="tradeList"></div>
+          </details>
+        </div>
+
+        <!-- 탭: 저장·공유 -->
+        <div class="tabpanel" data-panel="save">
+          <div class="group">
+            <p class="label">설정 저장·공유</p>
+            <div class="saverow">
+              <button class="pill" id="saveBtn">현재 설정 저장</button>
+              <button class="pill" id="shareBtn">공유 링크 복사</button>
+            </div>
+            <div id="presets" class="presets"></div>
           </div>
-          <div id="presets" class="presets"></div>
         </div>
 
         <p class="hint">성향·목표·종목·필터를 바꾸면 아래 결과가 실시간으로 갱신됩니다.</p>
@@ -363,25 +386,6 @@
       <div id="result">
         <div class="empty">불러오는 중…</div>
       </div>
-    </div>
-
-    <!-- 실거래 추적 -->
-    <div class="panel" id="tradePanel">
-      <p class="label" style="margin-bottom:4px;">내 실거래 추적 <span style="font-weight:500;">· 이 기기에 저장</span></p>
-      <p class="hint" style="margin-top:0;">실제 매수 기록을 넣으면 현재가 대비 평가손익을 원화로 보여줍니다.</p>
-      <form id="tradeForm" class="tradeform">
-        <input type="date" id="tDate" />
-        <select id="tTicker"></select>
-        <input type="number" id="tQty" placeholder="수량" step="any" min="0" />
-        <input type="number" id="tPrice" placeholder="매수단가($)" step="any" min="0" />
-        <button type="submit" class="pill" id="tAdd">추가</button>
-      </form>
-      <div id="holdings"></div>
-      <div id="tradeTotal"></div>
-      <details id="tradeListWrap" style="margin-top:10px;" hidden>
-        <summary style="font-size:13px;color:var(--blue);cursor:pointer;">거래 내역 보기</summary>
-        <div id="tradeList"></div>
-      </details>
     </div>
   </div>
 
@@ -687,7 +691,7 @@ async function run() {
     res.innerHTML = '<div class="empty">분석할 종목을 1개 이상 선택하세요.</div>';
     return;
   }
-  res.innerHTML = '<div class="empty">불러오는 중…</div>';
+  res.innerHTML = '<div class="empty">불러오는 중… <span style="font-size:12px;">(실시간 시세 조회, 최대 30초)</span></div>';
 
   // 무배당만 선택 시 '최소 배당수익률'은 무시(서로 모순이라 결과가 비지 않게)
   const my = state.dividends === 'no' ? 0 : Number(state.minYield || 0);
@@ -695,13 +699,24 @@ async function run() {
     '&dividends=' + state.dividends + '&min_yield=' + my + '&top=' + Number(state.top || 0) +
     '&tickers=' + tickers.join(',');
   let d;
+  const ctrl = new AbortController();
+  const timer = setTimeout(function () { ctrl.abort(); }, 35000);  // 무한 대기 방지
   try {
-    const resp = await fetch(url);
+    const resp = await fetch(url, { signal: ctrl.signal });
+    clearTimeout(timer);
+    if (resp.status === 401) { location.href = '/login'; return; }
+    if (resp.status === 403) {
+      res.innerHTML = '<div class="empty">관리자 승인 후 이용할 수 있습니다.</div>';
+      return;
+    }
     if (!resp.ok) throw new Error('status ' + resp.status);
     d = await resp.json();
   } catch (err) {
-    res.innerHTML = '<div class="empty">서버에서 추천 데이터를 불러오지 못했습니다.<br/>' +
-      '<code>python main.py</code> 로 서버가 실행 중인지 확인하세요.</div>';
+    clearTimeout(timer);
+    res.innerHTML = '<div class="empty">결과를 불러오지 못했습니다.<br/>' +
+      '<a id="retry" style="color:var(--blue);cursor:pointer;text-decoration:underline;">다시 시도</a></div>';
+    const rt = document.getElementById('retry');
+    if (rt) rt.onclick = run;
     return;
   }
   hideBanner();

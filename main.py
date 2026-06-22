@@ -587,23 +587,25 @@ def fetch_metrics(ticker: str):
     if _YF_OK:
         try:
             tk = yf.Ticker(ticker)
-            # timeout 으로 네트워크 지연 시 빠르게 폴백 (앱이 멈추지 않도록)
-            hist = tk.history(period="1y", auto_adjust=True, timeout=5)
+            # 가격+배당을 한 번에 받는다(actions=True). 별도 dividends 호출(타임아웃 없음)을
+            # 없애 네트워크 호출을 줄이고, 5초 타임아웃이 전부에 적용되게 한다.
+            hist = tk.history(period="1y", auto_adjust=True, timeout=5, actions=True)
             if hist is not None and len(hist) > 30:
                 closes = hist["Close"].dropna()
                 ret1y = (closes.iloc[-1] / closes.iloc[0] - 1.0) * 100.0
                 daily = closes.pct_change().dropna()
                 vol = float(daily.std() * (252 ** 0.5) * 100.0)
 
-                # 배당수익률: 최근 1년 배당 합계 / 현재가
+                # 배당수익률: 최근 1년 배당 합계 / 현재가 (위 history 의 Dividends 컬럼 사용)
                 price = float(closes.iloc[-1])
                 div_yield = base["yield"]  # 기본값
                 try:
-                    divs = tk.dividends
-                    if divs is not None and len(divs) > 0:
-                        last_year = divs[divs.index >= (closes.index[-1] - pd.Timedelta(days=365))]
-                        if len(last_year) > 0 and price > 0:
-                            div_yield = float(last_year.sum() / price * 100.0)
+                    if "Dividends" in hist.columns and price > 0:
+                        divs = hist["Dividends"].dropna()
+                        cutoff = closes.index[-1] - pd.Timedelta(days=365)
+                        last_sum = float(divs[divs.index >= cutoff].sum())
+                        if last_sum > 0:
+                            div_yield = last_sum / price * 100.0
                 except Exception:
                     pass
 

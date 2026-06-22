@@ -150,6 +150,27 @@
     z-index: 60; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
   .toast.show { opacity: .95; }
 
+  /* 실거래 추적 */
+  .tradeform { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 14px; }
+  .tradeform input, .tradeform select {
+    border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px;
+    font-size: 14px; font-family: inherit; color: var(--ink); outline: none; background: #fff; width: 100%;
+  }
+  .tradeform input:focus, .tradeform select:focus { border-color: var(--blue); }
+  .tradeform #tAdd { grid-column: 1 / -1; }
+  .hold { border: 1px solid var(--line); border-radius: 12px; padding: 12px 14px; margin-bottom: 10px; }
+  .hold .htop { display: flex; justify-content: space-between; align-items: baseline; }
+  .hold .htk { font-weight: 600; font-size: 15px; }
+  .hold .hpnl { font-weight: 700; font-size: 15px; }
+  .hold .hsub { font-size: 12px; color: var(--sub); margin-top: 4px; line-height: 1.6; }
+  .up { color: #c0392b; }   /* 한국식: 이익=빨강 */
+  .down { color: #1565c0; } /* 손실=파랑 */
+  .divrow { display: flex; align-items: center; gap: 8px; margin-top: 8px; font-size: 12px; color: var(--sub); }
+  .divrow input { width: 92px; border: 1px solid var(--line); border-radius: 8px; padding: 6px 8px; font-size: 13px; font-family: inherit; }
+  .ttotal { border-top: 1px solid var(--line); padding-top: 12px; margin-top: 4px; font-size: 14px; }
+  .trow { display: flex; justify-content: space-between; font-size: 12px; color: var(--sub); padding: 6px 0; border-bottom: 1px solid var(--line); }
+  .trow a { color: #c0392b; cursor: pointer; text-decoration: none; }
+
   /* 관리자 승인 패널 (오버레이) */
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex;
     align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 50; overflow: auto; }
@@ -342,6 +363,25 @@
 
         <p class="hint">성향·목표·종목·필터를 바꾸면 위 결과가 실시간으로 갱신됩니다.</p>
       </div>
+    </div>
+
+    <!-- 실거래 추적 -->
+    <div class="panel" id="tradePanel">
+      <p class="label" style="margin-bottom:4px;">내 실거래 추적 <span style="font-weight:500;">· 이 기기에 저장</span></p>
+      <p class="hint" style="margin-top:0;">실제 매수 기록을 넣으면 현재가 대비 평가손익을 원화로 보여줍니다.</p>
+      <form id="tradeForm" class="tradeform">
+        <input type="date" id="tDate" />
+        <select id="tTicker"></select>
+        <input type="number" id="tQty" placeholder="수량" step="any" min="0" />
+        <input type="number" id="tPrice" placeholder="매수단가($)" step="any" min="0" />
+        <button type="submit" class="pill" id="tAdd">추가</button>
+      </form>
+      <div id="holdings"></div>
+      <div id="tradeTotal"></div>
+      <details id="tradeListWrap" style="margin-top:10px;" hidden>
+        <summary style="font-size:13px;color:var(--blue);cursor:pointer;">거래 내역 보기</summary>
+        <div id="tradeList"></div>
+      </details>
     </div>
   </div>
 
@@ -892,11 +932,120 @@ document.getElementById('shareBtn').onclick = async function () {
   }
 };
 
+// ===== 실거래 추적 (localStorage) =====
+const TRADE_KEY = 'etf_trades', DIV_KEY = 'etf_div';
+function loadTrades() { try { return JSON.parse(localStorage.getItem(TRADE_KEY) || '[]'); } catch (e) { return []; } }
+function saveTrades(l) { try { localStorage.setItem(TRADE_KEY, JSON.stringify(l)); } catch (e) {} }
+function loadDiv() { try { return JSON.parse(localStorage.getItem(DIV_KEY) || '{}'); } catch (e) { return {}; } }
+function saveDiv(d) { try { localStorage.setItem(DIV_KEY, JSON.stringify(d)); } catch (e) {} }
+function usdS(n) { return (n < 0 ? '-' : '+') + '$' + Math.round(Math.abs(n)).toLocaleString('ko-KR'); }
+function wonS(n) { return (n < 0 ? '-' : '+') + Math.round(Math.abs(n)).toLocaleString('ko-KR') + '원'; }
+
+function fillTickerSelect() {
+  const sel = document.getElementById('tTicker');
+  if (!poolList.length) return;
+  sel.innerHTML = poolList.map(function (e) { return '<option value="' + e.ticker + '">' + e.ticker + ' · ' + (e.cat || '') + '</option>'; }).join('');
+}
+
+document.getElementById('tDate').value = new Date().toISOString().slice(0, 10);
+document.getElementById('tradeForm').addEventListener('submit', function (e) {
+  e.preventDefault();
+  const date = document.getElementById('tDate').value;
+  const ticker = document.getElementById('tTicker').value;
+  const qty = parseFloat(document.getElementById('tQty').value);
+  const price = parseFloat(document.getElementById('tPrice').value);
+  if (!date || !ticker || !(qty > 0) || !(price > 0)) { toast('날짜·종목·수량·매수단가를 올바르게 입력하세요'); return; }
+  const list = loadTrades();
+  list.push({ id: Date.now() + '' + Math.floor(Math.random() * 1000), date: date, ticker: ticker, qty: qty, price: price });
+  saveTrades(list);
+  document.getElementById('tQty').value = ''; document.getElementById('tPrice').value = '';
+  renderTrades(); toast('매수 기록을 추가했어요');
+});
+
+// 현재가·배당수익률·환율을 추천 API로 받아온다(점수는 무시)
+async function fetchPrices(tickers) {
+  const out = { prices: {}, yields: {}, fx: { rate: 1500, source: 'fallback' } };
+  if (!tickers.length) return out;
+  try {
+    const r = await fetch(API + '/api/recommend?top=0&tickers=' + tickers.join(','));
+    if (r.ok) {
+      const d = await r.json();
+      d.results.forEach(function (x) { out.prices[x.ticker] = x.price; out.yields[x.ticker] = x.yield; });
+      if (d.fx) out.fx = d.fx;
+    }
+  } catch (e) {}
+  return out;
+}
+
+async function renderTrades() {
+  const trades = loadTrades();
+  const wrap = document.getElementById('holdings');
+  const totalEl = document.getElementById('tradeTotal');
+  const listWrap = document.getElementById('tradeListWrap');
+  const listEl = document.getElementById('tradeList');
+  if (!trades.length) {
+    wrap.innerHTML = '<p style="color:var(--sub);font-size:13px;">아직 매수 기록이 없습니다. 위에서 추가해 보세요.</p>';
+    totalEl.innerHTML = ''; listWrap.hidden = true; return;
+  }
+  const agg = {};
+  trades.forEach(function (t) { const a = agg[t.ticker] || (agg[t.ticker] = { qty: 0, cost: 0 }); a.qty += t.qty; a.cost += t.qty * t.price; });
+  const tickers = Object.keys(agg);
+  const pdata = await fetchPrices(tickers);
+  const fx = pdata.fx, rate = fx.rate, divs = loadDiv();
+  let totCost = 0, totVal = 0, haveAll = true;
+  const cards = tickers.map(function (tk) {
+    const a = agg[tk], avg = a.cost / a.qty, cur = pdata.prices[tk];
+    totCost += a.cost;
+    let right = '', body = '';
+    if (cur == null) {
+      haveAll = false;
+      body = '<div class="hsub">현재가를 불러오지 못했습니다 (잠시 후 다시).</div>';
+    } else {
+      const val = a.qty * cur, pnl = val - a.cost, pct = a.cost > 0 ? pnl / a.cost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
+      totVal += val;
+      const yld = pdata.yields[tk] || 0, predDiv = a.cost * yld / 100, actDiv = parseFloat(divs[tk]) || 0;
+      const acc = predDiv > 0 ? (actDiv / predDiv * 100) : null;
+      right = '<span class="hpnl ' + cls + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
+      body =
+        '<div class="hsub">수량 ' + a.qty + '주 · 평균 $' + avg.toFixed(2) + ' · 현재 $' + cur + '</div>' +
+        '<div class="hsub">원금 약 ' + won(a.cost * rate) + ' → 평가 약 ' + won(val * rate) + '</div>' +
+        '<div class="hsub ' + cls + '" style="font-weight:600;">평가손익 ' + usdS(pnl) + ' · ' + wonS(pnl * rate) + ' · ' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</div>' +
+        '<div class="divrow">실제 배당 $<input type="number" step="any" min="0" data-div="' + tk + '" value="' + (divs[tk] != null ? divs[tk] : '') + '" placeholder="0"/>' +
+          '<span>· 앱 예상 $' + predDiv.toFixed(1) + (acc != null ? ' · 정확도 ' + acc.toFixed(0) + '%' : '') + '</span></div>';
+    }
+    return '<div class="hold"><div class="htop"><span class="htk">' + tk + '</span>' + right + '</div>' + body + '</div>';
+  }).join('');
+  wrap.innerHTML = cards;
+  if (totVal > 0) {
+    const pnl = totVal - totCost, pct = totCost > 0 ? pnl / totCost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
+    totalEl.innerHTML = '<div class="ttotal">합계 — 원금 약 ' + won(totCost * rate) + ' → 평가 약 ' + won(totVal * rate) +
+      ' <b class="' + cls + '">(' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '% · ' + wonS(pnl * rate) + ')</b>' +
+      (haveAll ? '' : ' <span style="color:var(--sub)">※ 일부 현재가 누락</span>') + '</div>' +
+      '<div class="hint" style="margin-top:6px;">환율 ' + Math.round(rate).toLocaleString('ko-KR') + '원' + (fx.source === 'fallback' ? ' (기본값)' : ' (실시간)') + ' 적용. 세금·수수료 미반영.</div>';
+  } else { totalEl.innerHTML = ''; }
+  listWrap.hidden = false;
+  listEl.innerHTML = trades.slice().reverse().map(function (t) {
+    return '<div class="trow"><span>' + t.date + ' · ' + t.ticker + ' · ' + t.qty + '주 @ $' + t.price + '</span><a data-del-trade="' + t.id + '">삭제</a></div>';
+  }).join('');
+}
+
+// 배당 입력(change) / 거래 삭제(click) — 이벤트 위임
+document.getElementById('tradePanel').addEventListener('change', function (e) {
+  const di = e.target.closest('[data-div]');
+  if (di) { const d = loadDiv(); const v = parseFloat(di.value); if (v > 0) d[di.dataset.div] = v; else delete d[di.dataset.div]; saveDiv(d); renderTrades(); }
+});
+document.getElementById('tradePanel').addEventListener('click', function (e) {
+  const del = e.target.closest('[data-del-trade]');
+  if (del) { saveTrades(loadTrades().filter(function (t) { return t.id !== del.dataset.delTrade; })); renderTrades(); }
+});
+
 // 초기화: 사용자 상태 → 즐겨찾기 → 종목 목록 → (URL 설정 복원) → 첫 결과 자동 표시
 (async function init() {
   await initUser();
   await loadFavorites();
   await loadPool();
+  fillTickerSelect();
+  renderTrades();
   renderPresets();
   const fromUrl = queryToSettings(location.search.slice(1));
   if (fromUrl) { applySettings(fromUrl); setCatActive(null); }

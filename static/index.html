@@ -562,6 +562,9 @@ async function initUser() {
     d = await r.json();
   } catch (e) { return; }
 
+  // 개방 모드: 로그인 UI 없음, 즐겨찾기는 이 기기(localStorage)에 저장
+  if (d.open) { favMode = 'local'; document.getElementById('userbar').innerHTML = ''; return; }
+
   favMode = 'server';
   // 사용자 바: (관리자면 승인 대기 링크) + 아이디 + 로그아웃
   let bar = '';

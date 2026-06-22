@@ -53,6 +53,12 @@ SESSION_COOKIE = "etf_session"
 _OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest", "/healthz"}
 
 
+def _accounts_enabled():
+    """REQUIRE_LOGIN 환경변수가 켜져 있을 때만 로그인·계정 모드.
+    없으면 개방 모드(로그인 없이 누구나 사용) — 출장/임시 웹 사용용."""
+    return os.environ.get("REQUIRE_LOGIN", "").strip().lower() in ("1", "true", "yes", "on")
+
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -172,6 +178,9 @@ def _set_session_cookie(resp, user_id: int, request: Request):
 @app.middleware("http")
 async def auth_guard(request: Request, call_next):
     path = request.url.path
+    # 개방 모드(REQUIRE_LOGIN 미설정): 로그인 없이 누구나 사용
+    if not _accounts_enabled():
+        return await call_next(request)
     if path in _OPEN_PATHS or path.startswith("/static/"):
         return await call_next(request)
 
@@ -362,6 +371,8 @@ def api_logout():
 
 @app.get("/api/me")
 def api_me(request: Request):
+    if not _accounts_enabled():
+        return {"open": True}
     uid = current_user_id(request)
     conn = get_db()
     row = conn.execute(

@@ -135,6 +135,14 @@
   .star { background: none; border: none; cursor: pointer; font-size: 20px; line-height: 1; color: #d2d2d7; padding: 0 2px; font-family: inherit; }
   .star.on { color: var(--blue); }
   .favsel { width: 100%; margin-top: 8px; }
+  .favtop { width: 100%; margin-bottom: 22px; }
+  /* 분석할 종목 접기 */
+  #checksDetails > summary { list-style: none; cursor: pointer; display: flex; align-items: center;
+    justify-content: space-between; padding: 4px 0; }
+  #checksDetails > summary::-webkit-details-marker { display: none; }
+  #checksDetails .caret { color: var(--sub); transition: transform .15s ease; }
+  #checksDetails[open] .caret { transform: rotate(180deg); }
+  #selCount { color: var(--blue); font-weight: 600; }
 
   /* 저장·공유 */
   .saverow { display: flex; gap: 8px; }
@@ -310,6 +318,8 @@
           </div>
         </div>
 
+        <button class="pill favtop" id="favTop">⭐ 즐겨찾기만 보기</button>
+
         <div class="tabs" id="tabs">
           <button class="tab active" data-tab="picks">종목</button>
           <button class="tab" data-tab="filter">필터</button>
@@ -329,16 +339,17 @@
               <button class="pill" data-cat="분산">분산</button>
               <button class="pill" data-cat="섹터">섹터</button>
             </div>
-            <button class="pill favsel" id="favSel">⭐ 즐겨찾기만 보기</button>
           </div>
 
           <div class="group">
-            <p class="label">분석할 종목</p>
-            <div class="selrow">
-              <a id="selAll">전체 선택</a>
-              <a id="selNone">전체 해제</a>
-            </div>
-            <div class="checks" id="checks"></div>
+            <details id="checksDetails">
+              <summary class="csum"><span class="label" style="margin:0;">분석할 종목 <span id="selCount"></span></span><span class="caret">▾</span></summary>
+              <div class="selrow" style="margin-top:12px;">
+                <a id="selAll">전체 선택</a>
+                <a id="selNone">전체 해제</a>
+              </div>
+              <div class="checks" id="checks"></div>
+            </details>
           </div>
         </div>
 
@@ -486,7 +497,7 @@ document.getElementById('catSeg').addEventListener('click', function (e) {
   if (!b) return;
   this.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
   b.classList.add('active');
-  document.getElementById('favSel').classList.remove('active');
+  favOnly = false; updateFavBtn();
   const cat = b.dataset.cat;
   document.querySelectorAll('#checks input').forEach(function (c) {
     const item = poolList.find(function (x) { return x.ticker === c.value; });
@@ -495,16 +506,31 @@ document.getElementById('catSeg').addEventListener('click', function (e) {
   if (state.ran) run();
 });
 
-// --- 즐겨찾기만 보기: 내 즐겨찾기 종목만 체크 ---
-document.getElementById('favSel').addEventListener('click', function () {
-  document.querySelectorAll('#catSeg .pill').forEach(function (p) { p.classList.remove('active'); });
-  this.classList.add('active');
-  if (favorites.size === 0) {
-    showBanner('⭐ 아직 즐겨찾기한 종목이 없습니다. 추천 결과 카드의 ★을 눌러 추가하세요.');
-  } else {
-    hideBanner();
-  }
+// --- 즐겨찾기만 보기 토글 (맨 위, 항상 보임) ---
+let favOnly = false;
+function updateFavBtn() {
+  const b = document.getElementById('favTop');
+  if (!b) return;
+  b.textContent = '⭐ 즐겨찾기만 보기' + (favorites.size ? ' (' + favorites.size + ')' : '');
+  b.classList.toggle('active', favOnly);
+}
+function applyFavSelection() {
   document.querySelectorAll('#checks input').forEach(function (c) { c.checked = favorites.has(c.value); });
+}
+document.getElementById('favTop').addEventListener('click', function () {
+  if (!favOnly && favorites.size === 0) {
+    toast('아직 즐겨찾기가 없어요. 결과 카드의 ★을 눌러 추가하세요.');
+    return;
+  }
+  favOnly = !favOnly;
+  document.querySelectorAll('#catSeg .pill').forEach(function (p) { p.classList.remove('active'); });
+  if (favOnly) {
+    applyFavSelection();
+  } else {
+    document.querySelectorAll('#checks input').forEach(function (c) { c.checked = true; });
+    setCatActive('전체');
+  }
+  updateFavBtn();
   if (state.ran) run();
 });
 
@@ -518,6 +544,7 @@ function renderChecks(list) {
       '<span style="color:var(--sub)">' + e.cat + '</span>' +
       '</label>';
   }).join('');
+  updateSelCount();
 }
 
 // --- 종목 목록 불러오기 (가벼운 호출, 자동으로 무거운 결과는 안 띄움) ---
@@ -548,7 +575,7 @@ function setCatActive(cat) {
   document.querySelectorAll('#catSeg .pill').forEach(function (p) {
     p.classList.toggle('active', p.dataset.cat === cat);
   });
-  document.getElementById('favSel').classList.remove('active');
+  favOnly = false; updateFavBtn();
 }
 
 let favMode = 'local';  // 'server'(로그인) | 'local'(개방 모드)
@@ -661,17 +688,21 @@ function saveLocalFavs() { try { localStorage.setItem(FAV_KEY, JSON.stringify(Ar
 async function loadFavorites() {
   if (favMode === 'local') {
     try { favorites = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); } catch (e) { favorites = new Set(); }
+    updateFavBtn();
     return;
   }
   try {
     const r = await fetch('/api/favorites');
     if (r.ok) { const d = await r.json(); favorites = new Set(d.tickers); }
   } catch (e) {}
+  updateFavBtn();
 }
 async function toggleFav(ticker, btn) {
   const on = favorites.has(ticker);
   if (on) favorites.delete(ticker); else favorites.add(ticker);
   if (btn) btn.classList.toggle('on', favorites.has(ticker));
+  updateFavBtn();
+  if (favOnly) { applyFavSelection(); if (state.ran) run(); }  // 즐겨찾기만 보기 중이면 즉시 반영
   if (favMode === 'local') { saveLocalFavs(); return; }
   try {
     if (on) {
@@ -715,9 +746,18 @@ document.getElementById('selNone').onclick = function () {
 function selectedTickers() {
   return Array.from(document.querySelectorAll('#checks input:checked')).map(function (c) { return c.value; });
 }
+// 접힌 '분석할 종목' 요약에 선택 개수 표시
+function updateSelCount() {
+  const el = document.getElementById('selCount');
+  if (!el) return;
+  const total = document.querySelectorAll('#checks input').length;
+  const sel = document.querySelectorAll('#checks input:checked').length;
+  el.textContent = total ? '(' + sel + '/' + total + ')' : '';
+}
 
 // --- 추천 실행 ---
 async function run() {
+  updateSelCount();
   const tickers = selectedTickers();
   const res = document.getElementById('result');
   if (tickers.length === 0) {

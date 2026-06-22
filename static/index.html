@@ -1,0 +1,418 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#f5f5f7" />
+<title>ETF 추천·분석</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<script src="https://cdnjs.cloudflare.com/ajax/libs/Chart.js/4.4.1/chart.umd.min.js"></script>
+<style>
+  :root {
+    --blue: #0066cc;
+    --ink: #1d1d1f;
+    --sub: #6e6e73;
+    --line: #e5e5e7;
+    --bg: #f5f5f7;
+    --card: #ffffff;
+    --radius: 16px;
+  }
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--ink);
+    line-height: 1.5;
+    -webkit-font-smoothing: antialiased;
+  }
+  header {
+    padding: 28px 24px 8px;
+    max-width: 1180px;
+    margin: 0 auto;
+  }
+  header h1 { font-size: 26px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+  header p { color: var(--sub); font-size: 14px; margin: 6px 0 0; }
+
+  /* 안내 배너 (서버 연결 문제 등) */
+  #banner {
+    max-width: 1180px;
+    margin: 8px auto 0;
+    padding: 12px 16px;
+    background: #fff;
+    border: 1px solid var(--blue);
+    border-radius: 12px;
+    font-size: 13px;
+    color: var(--ink);
+    line-height: 1.6;
+  }
+  #banner code {
+    background: var(--bg); padding: 1px 6px; border-radius: 5px;
+    font-family: ui-monospace, Menlo, monospace; font-size: 12px;
+  }
+
+  .layout {
+    max-width: 1180px;
+    margin: 0 auto;
+    padding: 16px 24px 60px;
+    display: grid;
+    grid-template-columns: 360px 1fr;
+    gap: 24px;
+    align-items: start;
+  }
+  /* 핸드폰: 세로 배치 자동 전환 */
+  @media (max-width: 820px) {
+    .layout {
+      grid-template-columns: 1fr;
+      padding: 12px 16px 40px;
+      gap: 16px;
+    }
+    header { padding: 20px 16px 4px; }
+    header h1 { font-size: 22px; }
+    header p { font-size: 13px; }
+    #banner { margin: 8px 16px 0; }
+    .panel { padding: 18px 16px; border-radius: 14px; }
+    .pill { padding: 11px 18px; font-size: 15px; }
+    .checks { grid-template-columns: 1fr 1fr; gap: 12px 14px; }
+    .chk { padding: 4px 0; font-size: 14px; }
+    .chk input { width: 20px; height: 20px; }
+    .btn { padding: 15px; font-size: 16px; }
+    .selrow a { font-size: 14px; padding: 4px 0; }
+    .metrics { gap: 12px 18px; }
+  }
+
+  .panel {
+    background: var(--card);
+    border: 1px solid var(--line);
+    border-radius: var(--radius);
+    padding: 22px;
+  }
+  .sticky { position: sticky; top: 16px; }
+  @media (max-width: 820px) { .sticky { position: static; } }
+
+  .label { font-size: 13px; font-weight: 600; color: var(--sub); margin: 0 0 10px; }
+  .group { margin-bottom: 22px; }
+
+  .seg { display: flex; gap: 8px; flex-wrap: wrap; }
+  .pill {
+    border: 1px solid var(--line);
+    background: #fff;
+    color: var(--ink);
+    border-radius: 999px;
+    padding: 9px 16px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all .15s ease;
+    font-family: inherit;
+  }
+  .pill:hover { border-color: #c7c7cc; }
+  .pill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+
+  .btn {
+    width: 100%;
+    border: none;
+    background: var(--blue);
+    color: #fff;
+    border-radius: 999px;
+    padding: 13px;
+    font-size: 15px;
+    font-weight: 600;
+    cursor: pointer;
+    font-family: inherit;
+    transition: opacity .15s ease;
+  }
+  .btn:hover { opacity: .9; }
+
+  .checks { display: grid; grid-template-columns: 1fr 1fr; gap: 8px 14px; }
+  .chk { display: flex; align-items: center; gap: 8px; font-size: 13px; cursor: pointer; }
+  .chk input { accent-color: var(--blue); width: 15px; height: 15px; }
+  .chk .tk { font-weight: 600; }
+  .selrow { display: flex; gap: 14px; margin-bottom: 12px; }
+  .selrow a { font-size: 12px; color: var(--blue); cursor: pointer; text-decoration: none; }
+
+  .hint { font-size: 12px; color: var(--sub); margin-top: 14px; }
+
+  .empty { text-align: center; color: var(--sub); padding: 60px 20px; font-size: 14px; line-height: 1.7; }
+  .empty code { background: var(--bg); padding: 1px 6px; border-radius: 5px; font-size: 12px; }
+  .src {
+    display: inline-block; font-size: 11px; font-weight: 600; padding: 3px 9px;
+    border-radius: 999px; border: 1px solid var(--line); color: var(--sub);
+  }
+  .src.live { color: var(--blue); border-color: var(--blue); }
+
+  .chartbox { margin: 6px 0 22px; }
+
+  .card {
+    border: 1px solid var(--line);
+    border-radius: 14px;
+    padding: 16px 18px;
+    margin-bottom: 12px;
+  }
+  .card .top { display: flex; justify-content: space-between; align-items: baseline; gap: 10px; }
+  .card .name { font-weight: 600; font-size: 16px; }
+  .card .name small { color: var(--sub); font-weight: 500; font-size: 12px; margin-left: 6px; }
+  .card .score { font-size: 22px; font-weight: 700; color: var(--blue); white-space: nowrap; }
+  .card .reason { font-size: 13px; color: var(--sub); margin: 6px 0 12px; }
+  .metrics { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
+  .metrics b { font-weight: 600; }
+  .metrics .m span { color: var(--sub); margin-right: 5px; }
+  .card .links { margin-top: 12px; }
+  .card .links a { font-size: 12px; color: var(--blue); text-decoration: none; }
+
+  .disc { font-size: 11px; color: var(--sub); margin-top: 18px; line-height: 1.6; }
+  .wbar { font-size: 12px; color: var(--sub); margin-bottom: 14px; }
+</style>
+</head>
+<body>
+  <header>
+    <h1>ETF 추천·분석</h1>
+    <p>위험 성향과 목표를 고르면, 대표 미국 ETF를 점수화해 보여줍니다.</p>
+  </header>
+
+  <div id="banner" style="display:none;"></div>
+
+  <div class="layout">
+    <!-- 좌(모바일: 위) : 입력 -->
+    <div>
+      <div class="panel sticky">
+        <div class="group">
+          <p class="label">위험 성향</p>
+          <div class="seg" id="riskSeg">
+            <button class="pill" data-v="conservative">안정형</button>
+            <button class="pill active" data-v="neutral">중립형</button>
+            <button class="pill" data-v="aggressive">공격형</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <p class="label">투자 목표</p>
+          <div class="seg" id="goalSeg">
+            <button class="pill" data-v="growth">성장</button>
+            <button class="pill" data-v="dividend">배당</button>
+            <button class="pill active" data-v="diversified">분산</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <p class="label">분석할 종목</p>
+          <div class="selrow">
+            <a id="selAll">전체 선택</a>
+            <a id="selNone">전체 해제</a>
+          </div>
+          <div class="checks" id="checks"></div>
+        </div>
+
+        <button class="btn" id="runBtn">추천 받기</button>
+        <p class="hint">먼저 “추천 받기”를 누르세요. 이후에는 성향·목표·종목을 바꾸면 결과가 실시간으로 갱신됩니다.</p>
+      </div>
+    </div>
+
+    <!-- 우(모바일: 아래) : 결과 -->
+    <div>
+      <div class="panel">
+        <div id="result">
+          <div class="empty">왼쪽에서 조건을 고르고 <b>추천 받기</b>를 누르면<br/>결과가 여기에 표시됩니다.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script>
+const API = '';
+const state = { risk: 'neutral', goal: 'diversified', ran: false };
+let chart = null;
+
+const CAT_LABEL = { growth: '성장', dividend: '배당', diversified: '분산' };
+const RISK_LABEL = { conservative: '안정형', neutral: '중립형', aggressive: '공격형' };
+
+// 서버(/api/etfs)에 연결 못 할 때 목록이라도 보이게 하는 비상용 폴백.
+// 실제 수치/점수는 항상 서버에서 계산한다(여기엔 티커·분류만 둠).
+const POOL_FALLBACK = [
+  ['VOO','성장'],['VTI','성장'],['QQQ','성장'],['VUG','성장'],['SCHG','성장'],
+  ['SCHD','배당'],['VYM','배당'],['DGRO','배당'],['HDV','배당'],['VIG','배당'],
+  ['BND','채권'],['AGG','채권'],['TLT','채권'],['SHY','채권'],['BNDX','채권'],
+  ['VT','분산'],['VEA','분산'],['VWO','분산'],['VNQ','분산'],['GLD','분산'],
+  ['XLK','섹터'],['XLF','섹터'],['XLV','섹터'],['XLE','섹터'],['XLY','섹터'],
+  ['XLP','섹터'],['XLI','섹터'],['XLU','섹터'],['XLB','섹터'],['XLRE','섹터'],['XLC','섹터'],
+].map(function (x) { return { ticker: x[0], cat: x[1] }; });
+
+const banner = document.getElementById('banner');
+function showBanner(html) { banner.innerHTML = html; banner.style.display = 'block'; }
+function hideBanner() { banner.style.display = 'none'; }
+
+// --- 세그먼트(알약) 버튼 ---
+function bindSeg(id, key) {
+  const seg = document.getElementById(id);
+  seg.addEventListener('click', function (e) {
+    const b = e.target.closest('.pill');
+    if (!b) return;
+    seg.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
+    b.classList.add('active');
+    state[key] = b.dataset.v;
+    if (state.ran) run(); // 첫 실행 이후에만 실시간 갱신
+  });
+}
+bindSeg('riskSeg', 'risk');
+bindSeg('goalSeg', 'goal');
+
+// --- 종목 체크박스 그리기 ---
+function renderChecks(list) {
+  document.getElementById('checks').innerHTML = list.map(function (e) {
+    return '<label class="chk">' +
+      '<input type="checkbox" value="' + e.ticker + '" checked />' +
+      '<span class="tk">' + e.ticker + '</span>' +
+      '<span style="color:var(--sub)">' + e.cat + '</span>' +
+      '</label>';
+  }).join('');
+}
+
+// --- 종목 목록 불러오기 (가벼운 호출, 자동으로 무거운 결과는 안 띄움) ---
+async function loadPool() {
+  // 파일을 직접 연 경우(file://)엔 서버가 없어 작동하지 않음 -> 즉시 안내
+  if (location.protocol === 'file:') {
+    renderChecks(POOL_FALLBACK);
+    showBanner('⚠️ 이 페이지를 <b>파일로 직접 열면</b> 추천이 작동하지 않습니다. ' +
+      '터미널에서 <code>python main.py</code> 로 서버를 켠 뒤 브라우저로 ' +
+      '<code>http://127.0.0.1:8000</code> 에 접속하세요.');
+    return;
+  }
+  try {
+    const r = await fetch(API + '/api/etfs');
+    if (!r.ok) throw new Error('status ' + r.status);
+    const d = await r.json();
+    renderChecks(d.etfs);
+    hideBanner();
+  } catch (err) {
+    renderChecks(POOL_FALLBACK);
+    showBanner('⚠️ 서버에 연결하지 못했습니다. <code>python main.py</code> 로 서버가 ' +
+      '실행 중인지, 주소가 <code>http://127.0.0.1:8000</code> 인지 확인하세요. ' +
+      '(목록은 임시로 표시했지만 추천을 받으려면 서버가 필요합니다.)');
+  }
+}
+
+document.getElementById('checks').addEventListener('change', function () { if (state.ran) run(); });
+document.getElementById('selAll').onclick = function () {
+  document.querySelectorAll('#checks input').forEach(function (c) { c.checked = true; });
+  if (state.ran) run();
+};
+document.getElementById('selNone').onclick = function () {
+  document.querySelectorAll('#checks input').forEach(function (c) { c.checked = false; });
+  if (state.ran) run();
+};
+
+function selectedTickers() {
+  return Array.from(document.querySelectorAll('#checks input:checked')).map(function (c) { return c.value; });
+}
+
+document.getElementById('runBtn').onclick = async function () {
+  state.ran = true;
+  await run();
+  // 핸드폰에서는 컨트롤 아래에 결과가 있으므로 결과로 자동 스크롤
+  if (window.innerWidth <= 820) {
+    document.getElementById('result').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  }
+};
+
+// --- 추천 실행 ---
+async function run() {
+  const tickers = selectedTickers();
+  const res = document.getElementById('result');
+  if (tickers.length === 0) {
+    res.innerHTML = '<div class="empty">분석할 종목을 1개 이상 선택하세요.</div>';
+    return;
+  }
+  res.innerHTML = '<div class="empty">불러오는 중…</div>';
+
+  const url = API + '/api/recommend?goal=' + state.goal + '&risk=' + state.risk + '&tickers=' + tickers.join(',');
+  let d;
+  try {
+    const resp = await fetch(url);
+    if (!resp.ok) throw new Error('status ' + resp.status);
+    d = await resp.json();
+  } catch (err) {
+    res.innerHTML = '<div class="empty">서버에서 추천 데이터를 불러오지 못했습니다.<br/>' +
+      '<code>python main.py</code> 로 서버가 실행 중인지 확인하세요.</div>';
+    return;
+  }
+  hideBanner();
+  render(d);
+}
+
+function srcBadge(src) {
+  if (src === 'yfinance') return '<span class="src live">실시간 (yfinance)</span>';
+  if (src === 'fallback') return '<span class="src">기본값 (fallback)</span>';
+  return '<span class="src">일부 기본값 (mixed)</span>';
+}
+
+function render(d) {
+  const w = d.weights;
+  const cards = d.results.map(function (r) {
+    return '<div class="card">' +
+      '<div class="top">' +
+        '<div class="name">' + r.ticker + ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
+        '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
+      '</div>' +
+      '<div class="reason">' + r.reason + '</div>' +
+      '<div class="metrics">' +
+        '<div class="m"><span>1년 수익률</span><b>' + r.ret1y + '%</b></div>' +
+        '<div class="m"><span>변동성</span><b>' + r.vol + '%</b></div>' +
+        '<div class="m"><span>배당수익률</span><b>' + r.yield + '%</b></div>' +
+        '<div class="m"><span>세부점수</span><b>수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + '</b></div>' +
+      '</div>' +
+      '<div class="links">' +
+        '<a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a>' +
+      '</div>' +
+    '</div>';
+  }).join('');
+
+  document.getElementById('result').innerHTML =
+    '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
+      '<div style="font-weight:600;">' + CAT_LABEL[d.goal] + ' · ' + RISK_LABEL[d.risk] + ' 추천 결과</div>' +
+      srcBadge(d.source) +
+    '</div>' +
+    '<div class="wbar">점수 가중치 — 수익성 ' + (w.R * 100).toFixed(0) + '% · 배당 ' + (w.D * 100).toFixed(0) +
+      '% · 안정성 ' + (w.S * 100).toFixed(0) + '% (목표·성향에 따라 자동 조정)</div>' +
+    '<div class="chartbox"><canvas id="chart" height="' + Math.max(140, d.results.length * 30) + '"></canvas></div>' +
+    cards +
+    '<p class="disc">' + d.disclaimer + '<br/>' +
+      '점수 = 수익성×' + w.R + ' + 배당×' + w.D + ' + 안정성×' + w.S +
+      '. 세부점수는 수익성=(1년수익률+10)/50, 배당=배당수익률/5, 안정성=(35−변동성)/35 를 0~100으로 환산한 값(화면 설명과 계산식 동일).</p>';
+
+  drawChart(d.results);
+}
+
+function drawChart(rows) {
+  const ctx = document.getElementById('chart');
+  if (!ctx || typeof Chart === 'undefined') return; // Chart.js 로드 실패해도 카드/표는 보이게
+  if (chart) chart.destroy();
+  chart = new Chart(ctx, {
+    type: 'bar',
+    data: {
+      labels: rows.map(function (r) { return r.ticker; }),
+      datasets: [{
+        label: '최종 점수',
+        data: rows.map(function (r) { return r.score; }),
+        backgroundColor: '#0066cc',
+        borderRadius: 6,
+        barThickness: 16
+      }]
+    },
+    options: {
+      indexAxis: 'y',
+      responsive: true,
+      maintainAspectRatio: false,
+      plugins: { legend: { display: false } },
+      scales: {
+        x: { min: 0, max: 100, grid: { color: '#f0f0f2' }, ticks: { color: '#6e6e73' } },
+        y: { grid: { display: false }, ticks: { color: '#1d1d1f', font: { weight: '600' } } }
+      }
+    }
+  });
+}
+
+loadPool();
+</script>
+</body>
+</html>

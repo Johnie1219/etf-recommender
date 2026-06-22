@@ -1,0 +1,17 @@
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+env/
+.env
+
+# 로그/임시
+*.log
+_verify.js
+_probe.txt
+_synctest*.txt
+
+# OS
+.DS_Store
+Thumbs.db

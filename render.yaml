@@ -1,0 +1,9 @@
+# Render 무료 배포 설정 (https://render.com).
+# GitHub 저장소를 연결하면 이 파일을 읽어 자동으로 빌드·실행한다.
+services:
+  - type: web
+    name: etf-recommender
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT

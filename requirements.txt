@@ -1,3 +1,5 @@
-fastapi
-uvicorn
-yfinance
+# 검증된 버전으로 고정 (특히 yfinance는 API가 자주 바뀌어 핀이 중요).
+# 올리려면 로컬에서 동작 확인 후 함께 갱신할 것.
+fastapi==0.138.0
+uvicorn[standard]==0.49.0
+yfinance==1.4.1

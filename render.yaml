@@ -7,3 +7,8 @@ services:
     plan: free
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      # 접속 비밀번호. sync:false 라서 깃에 저장되지 않고
+      # Render 대시보드에서 직접 입력한다. 비워두면 로그인 없이 공개된다.
+      - key: APP_PASSWORD
+        sync: false

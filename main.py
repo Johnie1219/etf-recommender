@@ -13,11 +13,13 @@
   실패 시 종목별 폴백값을 쓰고 source="fallback"으로 표시한다.
 """
 
-from fastapi import FastAPI
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi import FastAPI, Request
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, HTMLResponse
 from fastapi.staticfiles import StaticFiles
 import os
 import time
+import hmac
+import hashlib
 
 # yfinance 는 선택적 의존성. 설치/네트워크 실패해도 앱은 폴백으로 동작해야 한다.
 # pandas 는 yfinance 가 의존하므로 같은 블록에서 가져온다(없으면 함께 폴백).
@@ -32,6 +34,143 @@ app = FastAPI(title="ETF 추천·분석")
 
 BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
+
+# ---------------------------------------------------------------------------
+# 0) 접속 비밀번호 (선택)
+#    - 환경변수 APP_PASSWORD 가 있으면 모든 페이지·API 에 로그인 요구.
+#    - 없으면(로컬 개발 등) 보호 없이 그대로 동작.
+#    - 비밀번호 자체는 쿠키에 담지 않고, 비밀번호로 만든 HMAC 토큰만 쿠키에 저장.
+#      (비밀번호를 모르면 토큰을 만들 수 없고, 비밀번호를 바꾸면 기존 쿠키는 무효화.)
+# ---------------------------------------------------------------------------
+AUTH_COOKIE = "etf_auth"
+_AUTH_OPEN_PATHS = {"/login", "/logout", "/favicon.ico"}
+
+
+def _app_password():
+    return os.environ.get("APP_PASSWORD", "").strip()
+
+
+def _auth_token(pw: str) -> str:
+    """비밀번호로 만든 결정적 HMAC 토큰(쿠키 값)."""
+    return hmac.new(pw.encode("utf-8"), b"etf-recommender-auth-v1", hashlib.sha256).hexdigest()
+
+
+def _is_https(request: Request) -> bool:
+    # Render 등은 프록시 뒤에서 HTTPS 종료 → x-forwarded-proto 로 판별.
+    return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+
+
+@app.middleware("http")
+async def auth_guard(request: Request, call_next):
+    pw = _app_password()
+    if not pw:
+        return await call_next(request)  # 비밀번호 미설정 → 보호 없음
+
+    if request.url.path in _AUTH_OPEN_PATHS:
+        return await call_next(request)
+
+    cookie = request.cookies.get(AUTH_COOKIE, "")
+    if cookie and hmac.compare_digest(cookie, _auth_token(pw)):
+        return await call_next(request)
+
+    # 인증 안 됨: API 는 401, 일반 페이지는 로그인 화면으로
+    if request.url.path.startswith("/api"):
+        return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
+    return RedirectResponse("/login", status_code=302)
+
+
+_LOGIN_HTML = """<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+<meta name="theme-color" content="#f5f5f7" />
+<title>로그인 · ETF 추천·분석</title>
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet" />
+<style>
+  :root { --blue:#0066cc; --ink:#1d1d1f; --sub:#6e6e73; --line:#e5e5e7; --bg:#f5f5f7; --card:#fff; }
+  * { box-sizing:border-box; }
+  body { margin:0; min-height:100vh; display:flex; align-items:center; justify-content:center;
+    font-family:'Inter',-apple-system,BlinkMacSystemFont,sans-serif; background:var(--bg); color:var(--ink);
+    -webkit-font-smoothing:antialiased; padding:24px; }
+  .card { background:var(--card); border:1px solid var(--line); border-radius:16px;
+    padding:32px 28px; width:100%; max-width:360px; }
+  h1 { font-size:22px; font-weight:700; margin:0; letter-spacing:-0.02em; }
+  .sub { color:var(--sub); font-size:14px; margin:8px 0 22px; }
+  input { width:100%; border:1px solid var(--line); border-radius:12px; padding:13px 14px;
+    font-size:16px; font-family:inherit; color:var(--ink); outline:none; }
+  input:focus { border-color:var(--blue); }
+  button { width:100%; border:none; background:var(--blue); color:#fff; border-radius:999px;
+    padding:13px; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer;
+    margin-top:12px; transition:opacity .15s ease; }
+  button:hover { opacity:.9; }
+  .err { color:#c0392b; font-size:13px; min-height:18px; margin:12px 0 0; }
+</style>
+</head>
+<body>
+  <div class="card">
+    <h1>ETF 추천·분석</h1>
+    <p class="sub">접속하려면 비밀번호를 입력하세요.</p>
+    <form id="f">
+      <input id="pw" type="password" autocomplete="current-password" placeholder="비밀번호" autofocus />
+      <button type="submit">접속</button>
+    </form>
+    <p class="err" id="err"></p>
+  </div>
+<script>
+  var f = document.getElementById('f'), err = document.getElementById('err');
+  f.addEventListener('submit', async function (e) {
+    e.preventDefault();
+    err.textContent = '';
+    var pw = document.getElementById('pw').value;
+    try {
+      var r = await fetch('/login', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ password: pw })
+      });
+      if (r.ok) { location.href = '/'; return; }
+      var d = await r.json().catch(function () { return {}; });
+      err.textContent = d.error || '비밀번호가 올바르지 않습니다.';
+    } catch (e2) {
+      err.textContent = '서버에 연결하지 못했습니다.';
+    }
+  });
+</script>
+</body>
+</html>"""
+
+
+@app.get("/login")
+def login_page():
+    return HTMLResponse(_LOGIN_HTML)
+
+
+@app.post("/login")
+async def login_submit(request: Request):
+    pw = _app_password()
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    given = (body.get("password") if isinstance(body, dict) else "") or ""
+    if pw and hmac.compare_digest(given.strip(), pw):
+        resp = JSONResponse({"ok": True})
+        resp.set_cookie(
+            AUTH_COOKIE, _auth_token(pw),
+            max_age=60 * 60 * 24 * 30,  # 30일
+            httponly=True, samesite="lax", secure=_is_https(request),
+        )
+        return resp
+    return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다."}, status_code=401)
+
+
+@app.get("/logout")
+def logout():
+    resp = RedirectResponse("/login", status_code=302)
+    resp.delete_cookie(AUTH_COOKIE)
+    return resp
 
 # ---------------------------------------------------------------------------
 # 1) 추천 대상 ETF 고정 풀 (대표 미국 ETF)

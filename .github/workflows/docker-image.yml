@@ -1,0 +1,32 @@
+name: Docker image (GHCR)
+
+# main 에 푸시되면 컨테이너 이미지를 빌드해 GitHub Container Registry(GHCR)에 올린다.
+# NAS 에서는 이 이미지를 받아 실행만 하면 되므로, 소스 내려받기/빌드 없이 폰으로도 설정 가능.
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Log in to GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: ghcr.io/johnie1219/etf-recommender:latest

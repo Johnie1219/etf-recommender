@@ -152,6 +152,20 @@
   .star.on { color: var(--blue); }
   .favsel { width: 100%; margin-top: 8px; }
 
+  /* 관리자 승인 패널 (오버레이) */
+  .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex;
+    align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 50; overflow: auto; }
+  .modal { background: var(--card); border-radius: 16px; max-width: 440px; width: 100%; padding: 24px; }
+  .modal h2 { font-size: 18px; font-weight: 700; margin: 0; letter-spacing: -0.02em; }
+  .urow { display: flex; align-items: center; justify-content: space-between; gap: 10px;
+    padding: 11px 0; border-bottom: 1px solid var(--line); font-size: 14px; }
+  .urow .acts { flex-shrink: 0; white-space: nowrap; }
+  .urow .acts button { width: auto; display: inline-block; border: none; border-radius: 999px;
+    padding: 7px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; margin-left: 6px; }
+  .btn-approve { background: var(--blue); color: #fff; }
+  .btn-reject { background: #fff; color: #c0392b; border: 1px solid var(--line) !important; }
+  .btn-reject:disabled, .btn-approve:disabled { opacity: .5; }
+
   .btn {
     width: 100%;
     border: none;
@@ -453,20 +467,102 @@ function setCatActive(cat) {
   document.getElementById('favSel').classList.remove('active');
 }
 
-// --- 로그인 사용자 표시 + 로그아웃 ---
+// --- 로그인 사용자 표시 + 로그아웃 + 승인 상태 ---
 async function initUser() {
+  let d;
   try {
     const r = await fetch('/api/me');
     if (r.status === 401) { location.href = '/login'; return; }
-    const d = await r.json();
-    document.getElementById('userbar').innerHTML =
-      '<span class="uemail" title="' + d.email + '">' + d.email + '</span>' +
-      '<a id="logoutLink">로그아웃</a>';
-    document.getElementById('logoutLink').onclick = async function () {
-      try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
-      location.href = '/login';
-    };
-  } catch (e) {}
+    d = await r.json();
+  } catch (e) { return; }
+
+  // 사용자 바: (관리자면 승인 대기 링크) + 이메일 + 로그아웃
+  let bar = '';
+  if (d.is_admin) {
+    const n = d.pending_count || 0;
+    bar += '<a id="adminLink">승인 대기 ' + n + (n > 0 ? ' 🔔' : '') + '</a>';
+  }
+  bar += '<span class="uemail" title="' + d.email + '">' + d.email + '</span>' +
+         '<a id="logoutLink">로그아웃</a>';
+  document.getElementById('userbar').innerHTML = bar;
+  document.getElementById('logoutLink').onclick = async function () {
+    try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+    location.href = '/login';
+  };
+  if (d.is_admin) {
+    document.getElementById('adminLink').onclick = openAdmin;
+  }
+
+  // 미승인자(관리자 아님): 앱을 가리고 '승인 대기' 화면 + 주기적으로 승인 여부 확인
+  if (!d.approved) { showPending(); }
+}
+
+// 승인 대기 화면 (일반 사용자)
+function showPending() {
+  document.querySelector('.layout').innerHTML =
+    '<div class="panel" style="grid-column:1/-1;text-align:center;padding:48px 24px;">' +
+      '<div style="font-size:40px;margin-bottom:8px;">⏳</div>' +
+      '<h2 style="margin:0 0 8px;font-size:20px;">승인 대기중</h2>' +
+      '<p style="color:var(--sub);font-size:14px;line-height:1.6;margin:0;">' +
+      '관리자 승인 후 이용할 수 있습니다.<br/>승인되면 이 화면에서 자동으로 넘어갑니다.</p>' +
+    '</div>';
+  setInterval(async function () {
+    try {
+      const r = await fetch('/api/me');
+      if (r.ok) { const x = await r.json(); if (x.approved) { location.reload(); } }
+    } catch (e) {}
+  }, 15000);
+}
+
+// 관리자 승인 패널 (오버레이)
+async function openAdmin() {
+  let data;
+  try { data = await (await fetch('/api/admin/users')).json(); } catch (e) { return; }
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+
+  function urow(u, pending) {
+    const acts = pending
+      ? '<button class="btn-approve" data-act="approve" data-id="' + u.id + '">승인</button>' +
+        '<button class="btn-reject" data-act="reject" data-id="' + u.id + '">거절</button>'
+      : '<button class="btn-reject" data-act="reject" data-id="' + u.id + '">삭제</button>';
+    return '<div class="urow"><span class="uemail" title="' + u.email + '">' + u.email + '</span>' +
+           '<span class="acts">' + acts + '</span></div>';
+  }
+  const pendingHtml = data.pending.length
+    ? data.pending.map(function (u) { return urow(u, true); }).join('')
+    : '<p style="color:var(--sub);font-size:13px;">승인 대기 중인 사용자가 없습니다.</p>';
+  const approvedHtml = data.approved.map(function (u) { return urow(u, false); }).join('');
+
+  ov.innerHTML =
+    '<div class="modal">' +
+      '<h2>가입 승인 관리</h2>' +
+      '<p style="color:var(--sub);font-size:13px;margin:4px 0 16px;">새로 가입한 사용자를 승인하거나 거절하세요.</p>' +
+      '<div class="label" style="margin-bottom:6px;">승인 대기 (' + data.pending.length + ')</div>' +
+      pendingHtml +
+      '<div class="label" style="margin:18px 0 6px;">사용 중 (' + data.approved.length + ')</div>' +
+      approvedHtml +
+      '<button class="btn" id="admClose" style="margin-top:18px;">닫기</button>' +
+    '</div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#admClose').onclick = function () { ov.remove(); };
+
+  ov.addEventListener('click', async function (e) {
+    const b = e.target.closest('button[data-act]');
+    if (!b) return;
+    const act = b.dataset.act, id = parseInt(b.dataset.id, 10);
+    b.disabled = true;
+    try {
+      await fetch('/api/admin/' + act, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id: id })
+      });
+    } catch (err) {}
+    ov.remove();
+    await initUser();   // 배지·목록 갱신
+    openAdmin();        // 패널 다시 열어 갱신된 목록 표시
+  });
 }
 
 // --- 즐겨찾기 불러오기/토글 ---

@@ -136,6 +136,20 @@
   .star.on { color: var(--blue); }
   .favsel { width: 100%; margin-top: 8px; }
 
+  /* 저장·공유 */
+  .saverow { display: flex; gap: 8px; }
+  .saverow .pill { flex: 1; }
+  .presets { margin-top: 10px; }
+  .preset { display: flex; justify-content: space-between; align-items: center;
+    font-size: 13px; padding: 9px 0; border-bottom: 1px solid var(--line); }
+  .preset .pname { font-weight: 600; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+  .preset .pacts a { color: var(--blue); cursor: pointer; margin-left: 12px; font-size: 12px; text-decoration: none; }
+  .preset .pacts a.del { color: #c0392b; }
+  .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
+    background: var(--ink); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px;
+    z-index: 60; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
+  .toast.show { opacity: .95; }
+
   /* 관리자 승인 패널 (오버레이) */
   .overlay { position: fixed; inset: 0; background: rgba(0,0,0,.4); display: flex;
     align-items: flex-start; justify-content: center; padding: 40px 16px; z-index: 50; overflow: auto; }
@@ -224,6 +238,7 @@
   </header>
 
   <div id="banner" style="display:none;"></div>
+  <div id="toast" class="toast"></div>
 
   <div class="layout">
     <!-- 결과 (위) -->
@@ -314,6 +329,15 @@
               <button class="pill active" data-v="0">전체</button>
             </div>
           </div>
+        </div>
+
+        <div class="group" style="margin-top:6px;">
+          <p class="label">저장·공유</p>
+          <div class="saverow">
+            <button class="pill" id="saveBtn">현재 설정 저장</button>
+            <button class="pill" id="shareBtn">공유 링크 복사</button>
+          </div>
+          <div id="presets" class="presets"></div>
         </div>
 
         <p class="hint">성향·목표·종목·필터를 바꾸면 위 결과가 실시간으로 갱신됩니다.</p>
@@ -777,14 +801,107 @@ function drawChart(rows) {
   });
 }
 
-// 초기화: 로그인 사용자·즐겨찾기·종목 목록 불러오기
-// 초기화: 사용자 상태 → 즐겨찾기 → 종목 목록 → 첫 결과 자동 표시
+// ===== 저장·공유 (설정을 localStorage 저장 / URL로 공유) =====
+function setSeg(segId, key, val) {
+  const seg = document.getElementById(segId);
+  if (!seg) return;
+  seg.querySelectorAll('.pill').forEach(function (p) {
+    p.classList.toggle('active', p.dataset.v === String(val));
+  });
+  state[key] = String(val);
+}
+function currentSettings() {
+  return {
+    risk: state.risk, goal: state.goal, dividends: state.dividends,
+    minYield: state.minYield, top: state.top, tickers: selectedTickers()
+  };
+}
+function applySettings(s) {
+  if (!s) return;
+  if (s.risk) setSeg('riskSeg', 'risk', s.risk);
+  if (s.goal) setSeg('goalSeg', 'goal', s.goal);
+  if (s.dividends) setSeg('divSeg', 'dividends', s.dividends);
+  if (s.minYield != null) setSeg('minYieldSeg', 'minYield', s.minYield);
+  if (s.top != null) setSeg('topSeg', 'top', s.top);
+  if (Array.isArray(s.tickers) && s.tickers.length) {
+    const set = new Set(s.tickers);
+    document.querySelectorAll('#checks input').forEach(function (c) { c.checked = set.has(c.value); });
+  }
+  // 무배당만일 때 최소배당 비활성 동기화
+  const off = state.dividends === 'no';
+  const g = document.getElementById('minYieldGroup');
+  g.style.opacity = off ? '0.4' : ''; g.style.pointerEvents = off ? 'none' : '';
+}
+function settingsToQuery(s) {
+  const p = new URLSearchParams();
+  p.set('risk', s.risk); p.set('goal', s.goal); p.set('div', s.dividends);
+  p.set('my', s.minYield); p.set('top', s.top); p.set('tk', s.tickers.join(','));
+  return p.toString();
+}
+function queryToSettings(qs) {
+  const p = new URLSearchParams(qs);
+  if (!p.has('goal')) return null;
+  return {
+    risk: p.get('risk'), goal: p.get('goal'), dividends: p.get('div'),
+    minYield: p.get('my'), top: p.get('top'),
+    tickers: (p.get('tk') || '').split(',').filter(Boolean)
+  };
+}
+function toast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg; t.classList.add('show');
+  clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 1800);
+}
+
+const PRESET_KEY = 'etf_presets';
+function loadPresets() { try { return JSON.parse(localStorage.getItem(PRESET_KEY) || '[]'); } catch (e) { return []; } }
+function savePresets(list) { try { localStorage.setItem(PRESET_KEY, JSON.stringify(list)); } catch (e) {} }
+function renderPresets() {
+  const list = loadPresets();
+  document.getElementById('presets').innerHTML = list.map(function (p, i) {
+    return '<div class="preset"><span class="pname">' + p.name + '</span>' +
+      '<span class="pacts"><a data-load="' + i + '">불러오기</a>' +
+      '<a class="del" data-del="' + i + '">삭제</a></span></div>';
+  }).join('');
+}
+document.getElementById('saveBtn').onclick = function () {
+  const list = loadPresets();
+  if (list.length >= 5) { toast('설정은 최대 5개까지 저장돼요. 하나 삭제 후 저장하세요.'); return; }
+  const name = (prompt('저장할 이름을 입력하세요', CAT_LABEL[state.goal] + '·' + RISK_LABEL[state.risk]) || '').trim();
+  if (!name) return;
+  list.push({ name: name, settings: currentSettings() });
+  savePresets(list); renderPresets(); toast('저장됐어요');
+};
+document.getElementById('presets').addEventListener('click', function (e) {
+  const lo = e.target.closest('[data-load]'), de = e.target.closest('[data-del]');
+  const list = loadPresets();
+  if (lo) {
+    applySettings(list[+lo.dataset.load].settings); setCatActive(null);
+    if (state.ran) run(); toast('불러왔어요');
+  } else if (de) {
+    list.splice(+de.dataset.del, 1); savePresets(list); renderPresets();
+  }
+});
+document.getElementById('shareBtn').onclick = async function () {
+  const url = location.origin + location.pathname + '?' + settingsToQuery(currentSettings());
+  try {
+    await navigator.clipboard.writeText(url);
+    toast('공유 링크가 복사됐어요');
+  } catch (e) {
+    prompt('아래 링크를 복사하세요', url);
+  }
+};
+
+// 초기화: 사용자 상태 → 즐겨찾기 → 종목 목록 → (URL 설정 복원) → 첫 결과 자동 표시
 (async function init() {
   await initUser();
   await loadFavorites();
   await loadPool();
+  renderPresets();
+  const fromUrl = queryToSettings(location.search.slice(1));
+  if (fromUrl) { applySettings(fromUrl); setCatActive(null); }
   state.ran = true;   // 이후 변경은 실시간 갱신
-  run();              // 페이지 열면 기본값(중립형·배당)으로 결과 바로 표시
+  run();              // 페이지 열면 기본값(중립형·배당) 또는 공유 링크 설정으로 결과 바로 표시
 })();
 </script>
 </body>

@@ -53,14 +53,19 @@ SESSION_COOKIE = "etf_session"
 _OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest"}
 
 
-def _admin_email():
-    """마스터(관리자) 이메일. ADMIN_EMAIL 환경변수로 지정한 계정이 관리자."""
-    return os.environ.get("ADMIN_EMAIL", "").strip().lower()
+def _admin_user():
+    """마스터(관리자) 아이디. ADMIN_USER 환경변수로 지정한 계정이 관리자."""
+    return os.environ.get("ADMIN_USER", "").strip().lower()
 
 
-def is_admin(email: str) -> bool:
-    a = _admin_email()
-    return bool(a) and (email or "").strip().lower() == a
+def _accounts_enabled():
+    """ADMIN_USER 가 있으면 계정·로그인 모드, 없으면 개방 모드(로그인 없이 사용)."""
+    return bool(_admin_user())
+
+
+def is_admin(username: str) -> bool:
+    a = _admin_user()
+    return bool(a) and (username or "").strip().lower() == a
 
 
 def get_db():
@@ -75,7 +80,7 @@ def init_db():
         """
         CREATE TABLE IF NOT EXISTS users (
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
-            email     TEXT UNIQUE NOT NULL,
+            username  TEXT UNIQUE NOT NULL,
             pw_hash   TEXT NOT NULL,
             approved  INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
@@ -88,24 +93,32 @@ def init_db():
         );
         """
     )
-    # 기존 DB 업그레이드: approved 컬럼이 없으면 추가
     cols = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
+    # 기존 DB 업그레이드
     if "approved" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 0")
-    # 관리자 이메일은 항상 승인 상태로 유지(가입 전이면 가입 시 자동 승인)
-    admin = _admin_email()
+    if "username" not in cols and "email" in cols:
+        conn.execute("ALTER TABLE users RENAME COLUMN email TO username")
+    # 관리자 계정: 있으면 승인 유지, 없고 ADMIN_PASSWORD 있으면 자동 생성(승인 상태)
+    admin = _admin_user()
     if admin:
-        conn.execute("UPDATE users SET approved = 1 WHERE email = ?", (admin,))
+        row = conn.execute("SELECT id FROM users WHERE username = ?", (admin,)).fetchone()
+        if row is not None:
+            conn.execute("UPDATE users SET approved = 1 WHERE username = ?", (admin,))
+        else:
+            pw = os.environ.get("ADMIN_PASSWORD", "")
+            if pw:
+                conn.execute(
+                    "INSERT INTO users (username, pw_hash, approved) VALUES (?, ?, 1)",
+                    (admin, hash_pw(pw)),
+                )
     conn.commit()
     conn.close()
 
 
-init_db()
-
-
 def get_user(uid):
     conn = get_db()
-    row = conn.execute("SELECT id, email, approved FROM users WHERE id = ?", (uid,)).fetchone()
+    row = conn.execute("SELECT id, username, approved FROM users WHERE id = ?", (uid,)).fetchone()
     conn.close()
     return row
 
@@ -139,6 +152,10 @@ def verify_pw(password: str, stored: str) -> bool:
         return hmac.compare_digest(dk.hex(), dk_hex)
     except Exception:
         return False
+
+
+# DB 초기화는 hash_pw 정의 이후에 실행(관리자 자동 생성에 필요)
+init_db()
 
 
 def make_session(user_id: int) -> str:
@@ -178,6 +195,9 @@ def _set_session_cookie(resp, user_id: int, request: Request):
 @app.middleware("http")
 async def auth_guard(request: Request, call_next):
     path = request.url.path
+    # 개방 모드(ADMIN_USER 미설정): 로그인 없이 누구나 사용
+    if not _accounts_enabled():
+        return await call_next(request)
     if path in _OPEN_PATHS or path.startswith("/static/"):
         return await call_next(request)
 
@@ -197,9 +217,9 @@ async def auth_guard(request: Request, call_next):
         if row is None:
             return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
         if path.startswith("/api/admin"):
-            if not is_admin(row["email"]):
+            if not is_admin(row["username"]):
                 return JSONResponse({"error": "권한이 없습니다."}, status_code=403)
-        elif not (row["approved"] or is_admin(row["email"])):
+        elif not (row["approved"] or is_admin(row["username"])):
             return JSONResponse({"error": "관리자 승인 대기중입니다."}, status_code=403)
     return await call_next(request)
 
@@ -241,8 +261,8 @@ _LOGIN_HTML = """<!DOCTYPE html>
     <h1>ETF 추천·분석</h1>
     <p class="sub" id="sub">로그인하고 즐겨찾기를 사용해 보세요.</p>
     <form id="f">
-      <label for="email">이메일</label>
-      <input id="email" type="email" autocomplete="username" placeholder="you@example.com" autofocus />
+      <label for="uid">아이디</label>
+      <input id="uid" type="text" autocomplete="username" placeholder="아이디" autofocus />
       <label for="pw">비밀번호</label>
       <input id="pw" type="password" autocomplete="current-password" placeholder="비밀번호 (8자 이상)" />
       <button type="submit" id="submitBtn">로그인</button>
@@ -264,7 +284,7 @@ _LOGIN_HTML = """<!DOCTYPE html>
       mode = (mode === 'login') ? 'register' : 'login';
       if (mode === 'register') {
         submitBtn.textContent = '회원가입';
-        sub.textContent = '이메일과 비밀번호로 가입하세요.';
+        sub.textContent = '아이디와 비밀번호로 가입하세요.';
         pw.setAttribute('autocomplete', 'new-password');
         toggle.innerHTML = '이미 계정이 있으신가요? <a id="toggleLink">로그인</a>';
       } else {
@@ -279,13 +299,13 @@ _LOGIN_HTML = """<!DOCTYPE html>
   f.addEventListener('submit', async function (e) {
     e.preventDefault();
     err.textContent = '';
-    var email = document.getElementById('email').value.trim();
+    var username = document.getElementById('uid').value.trim();
     var password = pw.value;
     try {
       var r = await fetch('/api/' + mode, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ email: email, password: password })
+        body: JSON.stringify({ username: username, password: password })
       });
       if (r.ok) { location.href = '/'; return; }
       var d = await r.json().catch(function () { return {}; });
@@ -298,7 +318,7 @@ _LOGIN_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
-_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+_USERNAME_RE = re.compile(r"^[a-zA-Z0-9_]{3,20}$")
 
 
 @app.get("/login")
@@ -313,30 +333,30 @@ async def _read_credentials(request: Request):
         body = {}
     if not isinstance(body, dict):
         body = {}
-    email = (body.get("email") or "").strip().lower()
+    username = (body.get("username") or "").strip().lower()
     password = body.get("password") or ""
-    return email, password
+    return username, password
 
 
 @app.post("/api/register")
 async def api_register(request: Request):
-    email, password = await _read_credentials(request)
-    if not _EMAIL_RE.match(email):
-        return JSONResponse({"error": "올바른 이메일 형식이 아닙니다."}, status_code=400)
+    username, password = await _read_credentials(request)
+    if not _USERNAME_RE.match(username):
+        return JSONResponse({"error": "아이디는 영문/숫자/밑줄 3~20자여야 합니다."}, status_code=400)
     if len(password) < 8:
         return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
-    # 관리자 이메일이면 자동 승인, 그 외는 승인 대기(approved=0)
-    approved = 1 if is_admin(email) else 0
+    # 관리자 아이디면 자동 승인, 그 외는 승인 대기(approved=0)
+    approved = 1 if is_admin(username) else 0
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO users (email, pw_hash, approved) VALUES (?, ?, ?)",
-            (email, hash_pw(password), approved),
+            "INSERT INTO users (username, pw_hash, approved) VALUES (?, ?, ?)",
+            (username, hash_pw(password), approved),
         )
         conn.commit()
         user_id = cur.lastrowid
     except sqlite3.IntegrityError:
-        return JSONResponse({"error": "이미 가입된 이메일입니다."}, status_code=409)
+        return JSONResponse({"error": "이미 사용 중인 아이디입니다."}, status_code=409)
     finally:
         conn.close()
     resp = JSONResponse({"ok": True, "approved": bool(approved)})
@@ -346,12 +366,12 @@ async def api_register(request: Request):
 
 @app.post("/api/login")
 async def api_login(request: Request):
-    email, password = await _read_credentials(request)
+    username, password = await _read_credentials(request)
     conn = get_db()
-    row = conn.execute("SELECT id, pw_hash FROM users WHERE email = ?", (email,)).fetchone()
+    row = conn.execute("SELECT id, pw_hash FROM users WHERE username = ?", (username,)).fetchone()
     conn.close()
     if row is None or not verify_pw(password, row["pw_hash"]):
-        return JSONResponse({"error": "이메일 또는 비밀번호가 올바르지 않습니다."}, status_code=401)
+        return JSONResponse({"error": "아이디 또는 비밀번호가 올바르지 않습니다."}, status_code=401)
     resp = JSONResponse({"ok": True})
     _set_session_cookie(resp, row["id"], request)
     return resp
@@ -366,14 +386,17 @@ def api_logout():
 
 @app.get("/api/me")
 def api_me(request: Request):
+    # 개방 모드: 로그인 개념 없음
+    if not _accounts_enabled():
+        return {"open": True}
     uid = current_user_id(request)
     conn = get_db()
-    row = conn.execute("SELECT email, approved FROM users WHERE id = ?", (uid,)).fetchone()
+    row = conn.execute("SELECT username, approved FROM users WHERE id = ?", (uid,)).fetchone()
     if row is None:
         conn.close()
         return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
-    admin = is_admin(row["email"])
-    out = {"email": row["email"], "approved": bool(row["approved"]) or admin, "is_admin": admin}
+    admin = is_admin(row["username"])
+    out = {"username": row["username"], "approved": bool(row["approved"]) or admin, "is_admin": admin}
     if admin:
         out["pending_count"] = conn.execute(
             "SELECT COUNT(*) AS c FROM users WHERE approved = 0"
@@ -387,12 +410,12 @@ def api_me(request: Request):
 def api_admin_users():
     conn = get_db()
     rows = conn.execute(
-        "SELECT id, email, approved, created_at FROM users ORDER BY approved, created_at"
+        "SELECT id, username, approved, created_at FROM users ORDER BY approved, created_at"
     ).fetchall()
     conn.close()
-    pending = [{"id": r["id"], "email": r["email"], "created_at": r["created_at"]}
+    pending = [{"id": r["id"], "username": r["username"], "created_at": r["created_at"]}
                for r in rows if not r["approved"]]
-    approved = [{"id": r["id"], "email": r["email"]} for r in rows if r["approved"]]
+    approved = [{"id": r["id"], "username": r["username"]} for r in rows if r["approved"]]
     return {"pending": pending, "approved": approved}
 
 
@@ -427,8 +450,8 @@ async def api_admin_reject(request: Request):
     if uid is None:
         return JSONResponse({"error": "잘못된 요청입니다."}, status_code=400)
     conn = get_db()
-    row = conn.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
-    if row is not None and is_admin(row["email"]):
+    row = conn.execute("SELECT username FROM users WHERE id = ?", (uid,)).fetchone()
+    if row is not None and is_admin(row["username"]):
         conn.close()
         return JSONResponse({"error": "관리자 계정은 삭제할 수 없습니다."}, status_code=400)
     conn.execute("DELETE FROM favorites WHERE user_id = ?", (uid,))
@@ -441,6 +464,8 @@ async def api_admin_reject(request: Request):
 @app.get("/api/favorites")
 def api_favorites_list(request: Request):
     uid = current_user_id(request)
+    if uid is None:  # 개방 모드 등: 즐겨찾기는 클라이언트(localStorage)에서 관리
+        return {"tickers": []}
     conn = get_db()
     rows = conn.execute(
         "SELECT ticker FROM favorites WHERE user_id = ? ORDER BY created_at", (uid,)
@@ -452,6 +477,8 @@ def api_favorites_list(request: Request):
 @app.post("/api/favorites")
 async def api_favorites_add(request: Request):
     uid = current_user_id(request)
+    if uid is None:
+        return JSONResponse({"ok": True}, status_code=200)
     try:
         body = await request.json()
     except Exception:
@@ -472,6 +499,8 @@ async def api_favorites_add(request: Request):
 @app.delete("/api/favorites")
 def api_favorites_remove(request: Request, ticker: str = ""):
     uid = current_user_id(request)
+    if uid is None:
+        return {"ok": True}
     conn = get_db()
     conn.execute(
         "DELETE FROM favorites WHERE user_id = ? AND ticker = ?", (uid, ticker.strip().upper())

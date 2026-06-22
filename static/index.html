@@ -467,6 +467,8 @@ function setCatActive(cat) {
   document.getElementById('favSel').classList.remove('active');
 }
 
+let favMode = 'local';  // 'server'(로그인) | 'local'(개방 모드)
+
 // --- 로그인 사용자 표시 + 로그아웃 + 승인 상태 ---
 async function initUser() {
   let d;
@@ -476,13 +478,17 @@ async function initUser() {
     d = await r.json();
   } catch (e) { return; }
 
-  // 사용자 바: (관리자면 승인 대기 링크) + 이메일 + 로그아웃
+  // 개방 모드: 로그인 UI 없음, 즐겨찾기는 localStorage 사용
+  if (d.open) { favMode = 'local'; document.getElementById('userbar').innerHTML = ''; return; }
+
+  favMode = 'server';
+  // 사용자 바: (관리자면 승인 대기 링크) + 아이디 + 로그아웃
   let bar = '';
   if (d.is_admin) {
     const n = d.pending_count || 0;
     bar += '<a id="adminLink">승인 대기 ' + n + (n > 0 ? ' 🔔' : '') + '</a>';
   }
-  bar += '<span class="uemail" title="' + d.email + '">' + d.email + '</span>' +
+  bar += '<span class="uemail" title="' + d.username + '">' + d.username + '</span>' +
          '<a id="logoutLink">로그아웃</a>';
   document.getElementById('userbar').innerHTML = bar;
   document.getElementById('logoutLink').onclick = async function () {
@@ -527,7 +533,7 @@ async function openAdmin() {
       ? '<button class="btn-approve" data-act="approve" data-id="' + u.id + '">승인</button>' +
         '<button class="btn-reject" data-act="reject" data-id="' + u.id + '">거절</button>'
       : '<button class="btn-reject" data-act="reject" data-id="' + u.id + '">삭제</button>';
-    return '<div class="urow"><span class="uemail" title="' + u.email + '">' + u.email + '</span>' +
+    return '<div class="urow"><span class="uemail" title="' + u.username + '">' + u.username + '</span>' +
            '<span class="acts">' + acts + '</span></div>';
   }
   const pendingHtml = data.pending.length
@@ -565,8 +571,14 @@ async function openAdmin() {
   });
 }
 
-// --- 즐겨찾기 불러오기/토글 ---
+// --- 즐겨찾기 불러오기/토글 (개방 모드는 localStorage, 로그인 모드는 서버) ---
+const FAV_KEY = 'etf_favorites';
+function saveLocalFavs() { try { localStorage.setItem(FAV_KEY, JSON.stringify(Array.from(favorites))); } catch (e) {} }
 async function loadFavorites() {
+  if (favMode === 'local') {
+    try { favorites = new Set(JSON.parse(localStorage.getItem(FAV_KEY) || '[]')); } catch (e) { favorites = new Set(); }
+    return;
+  }
   try {
     const r = await fetch('/api/favorites');
     if (r.ok) { const d = await r.json(); favorites = new Set(d.tickers); }
@@ -574,18 +586,18 @@ async function loadFavorites() {
 }
 async function toggleFav(ticker, btn) {
   const on = favorites.has(ticker);
+  if (on) favorites.delete(ticker); else favorites.add(ticker);
+  if (btn) btn.classList.toggle('on', favorites.has(ticker));
+  if (favMode === 'local') { saveLocalFavs(); return; }
   try {
     if (on) {
       await fetch('/api/favorites?ticker=' + encodeURIComponent(ticker), { method: 'DELETE' });
-      favorites.delete(ticker);
     } else {
       await fetch('/api/favorites', {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ ticker: ticker })
       });
-      favorites.add(ticker);
     }
-    if (btn) btn.classList.toggle('on', favorites.has(ticker));
   } catch (e) {}
 }
 // 결과 카드의 ★ 클릭 (이벤트 위임)
@@ -773,8 +785,8 @@ function drawChart(rows) {
 }
 
 // 초기화: 로그인 사용자·즐겨찾기·종목 목록 불러오기
-initUser();
-loadFavorites();
+// 초기화: 사용자 상태 확인(favMode 결정) → 즐겨찾기 → 종목 목록
+initUser().then(loadFavorites);
 loadPool();
 </script>
 </body>

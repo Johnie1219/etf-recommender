@@ -20,6 +20,7 @@ import os
 import time
 import hmac
 import hashlib
+from concurrent.futures import ThreadPoolExecutor
 
 # yfinance 는 선택적 의존성. 설치/네트워크 실패해도 앱은 폴백으로 동작해야 한다.
 # pandas 는 yfinance 가 의존하므로 같은 블록에서 가져온다(없으면 함께 폴백).
@@ -377,10 +378,18 @@ def recommend(goal: str = "diversified", risk: str = "neutral", tickers: str = "
     else:
         wanted = [e["ticker"] for e in ETF_POOL]
 
+    # yfinance 는 종목당 네트워크 호출이라 순차로 돌리면 느리다(특히 무료 서버).
+    # 여러 종목을 동시에 받아 대기 시간을 크게 줄인다. (실패 시 각자 폴백은 그대로)
+    if wanted:
+        with ThreadPoolExecutor(max_workers=min(16, len(wanted))) as ex:
+            metric_list = list(ex.map(fetch_metrics, wanted))
+    else:
+        metric_list = []
+
     rows = []
     sources = set()
-    for t in wanted:
-        m = fetch_metrics(t)
+    for m in metric_list:
+        t = m["ticker"]
         sources.add(m["source"])
         sc = sub_scores(m)
         score = w["R"] * sc["R"] + w["D"] * sc["D"] + w["S"] * sc["S"]

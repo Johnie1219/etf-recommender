@@ -44,7 +44,8 @@ STATIC_DIR = os.path.join(BASE_DIR, "static")
 #      (비밀번호를 모르면 토큰을 만들 수 없고, 비밀번호를 바꾸면 기존 쿠키는 무효화.)
 # ---------------------------------------------------------------------------
 AUTH_COOKIE = "etf_auth"
-_AUTH_OPEN_PATHS = {"/login", "/logout", "/favicon.ico"}
+# 로그인 없이도 열어둘 경로: 로그인 화면 + 홈화면 아이콘/매니페스트(민감정보 아님).
+_AUTH_OPEN_PATHS = {"/login", "/logout", "/favicon.ico", "/manifest.webmanifest"}
 
 
 def _app_password():
@@ -67,7 +68,7 @@ async def auth_guard(request: Request, call_next):
     if not pw:
         return await call_next(request)  # 비밀번호 미설정 → 보호 없음
 
-    if request.url.path in _AUTH_OPEN_PATHS:
+    if request.url.path in _AUTH_OPEN_PATHS or request.url.path.startswith("/static/pwa/"):
         return await call_next(request)
 
     cookie = request.cookies.get(AUTH_COOKIE, "")
@@ -172,6 +173,30 @@ def logout():
     resp = RedirectResponse("/login", status_code=302)
     resp.delete_cookie(AUTH_COOKIE)
     return resp
+
+
+# 홈화면 추가(PWA)용 웹 매니페스트. 아이콘은 static/pwa/ 에 둔다.
+_MANIFEST = {
+    "name": "ETF 추천·분석",
+    "short_name": "ETF 추천",
+    "lang": "ko",
+    "start_url": "/",
+    "scope": "/",
+    "display": "standalone",
+    "background_color": "#f5f5f7",
+    "theme_color": "#f5f5f7",
+    "icons": [
+        {"src": "/static/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any"},
+        {"src": "/static/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any"},
+        {"src": "/static/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "maskable"},
+        {"src": "/static/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "maskable"},
+    ],
+}
+
+
+@app.get("/manifest.webmanifest")
+def manifest():
+    return JSONResponse(_MANIFEST, media_type="application/manifest+json")
 
 # ---------------------------------------------------------------------------
 # 1) 추천 대상 ETF 고정 풀 (대표 미국 ETF)

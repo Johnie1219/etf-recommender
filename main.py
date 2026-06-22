@@ -532,7 +532,9 @@ if os.path.isdir(STATIC_DIR):
 def index():
     path = os.path.join(STATIC_DIR, "index.html")
     if os.path.exists(path):
-        return FileResponse(path)
+        # 화면(HTML)은 캐시하지 않게 해, 재배포 시 새로고침만 하면 바로 최신 화면이 뜨도록.
+        # (아이콘 등 /static 자산은 그대로 캐시 허용)
+        return FileResponse(path, headers={"Cache-Control": "no-cache, must-revalidate"})
     return JSONResponse({"error": "static/index.html 이(가) 없습니다."}, status_code=404)
 
 

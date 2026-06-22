@@ -426,6 +426,22 @@ function srcBadge(src) {
   return '<span class="src">일부 기본값 (mixed)</span>';
 }
 
+// 숫자 포맷 도우미
+function won(n) { return (n === null || n === undefined) ? '—' : Math.round(n).toLocaleString('ko-KR') + '원'; }
+function pct(n) { return (n === null || n === undefined) ? '—' : n + '%'; }
+
+// 환율 안내 문구 (정직하게: 실시간/기본값, 1년 변동 표시)
+function fxLine(fx) {
+  if (!fx) return '';
+  let s = '환율 1 USD = ' + Math.round(fx.rate).toLocaleString('ko-KR') + '원';
+  s += fx.source === 'fallback' ? ' (기본값·참고용)' : ' (실시간)';
+  if (fx.change1y !== null && fx.change1y !== undefined) {
+    const sign = fx.change1y >= 0 ? '▲' : '▼';
+    s += ' · 최근 1년 ' + sign + Math.abs(fx.change1y) + '%';
+  }
+  return s;
+}
+
 // 적용된 필터를 한국어로 요약 (정직하게: 무엇을/몇 개 보여주는지)
 function filterSummary(d) {
   const f = d.filters || {};
@@ -466,7 +482,10 @@ function render(d) {
       '</div>' +
       '<div class="reason">' + r.reason + '</div>' +
       '<div class="metrics">' +
-        '<div class="m"><span>1년 수익률</span><b>' + r.ret1y + '%</b></div>' +
+        '<div class="m"><span>현재가</span><b>' + (r.price === null ? '—' : '$' + r.price) +
+          (r.price_krw !== null ? ' <span style="color:var(--sub);font-weight:500">(약 ' + won(r.price_krw) + ')</span>' : '') + '</b></div>' +
+        '<div class="m"><span>1년 수익률(달러)</span><b>' + pct(r.ret1y) + '</b></div>' +
+        '<div class="m"><span>원화 환산 1년</span><b>' + pct(r.ret1y_krw) + '</b></div>' +
         '<div class="m"><span>변동성</span><b>' + r.vol + '%</b></div>' +
         '<div class="m"><span>배당수익률</span><b>' + r.yield + '%</b></div>' +
         '<div class="m"><span>세부점수</span><b>수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + '</b></div>' +
@@ -480,8 +499,9 @@ function render(d) {
   document.getElementById('result').innerHTML =
     header +
     '<div class="wbar">' + filterSummary(d) + '</div>' +
+    '<div class="wbar">' + fxLine(d.fx) + '</div>' +
     '<div class="wbar">점수 가중치 — 수익성 ' + (w.R * 100).toFixed(0) + '% · 배당 ' + (w.D * 100).toFixed(0) +
-      '% · 안정성 ' + (w.S * 100).toFixed(0) + '% (목표·성향에 따라 자동 조정)</div>' +
+      '% · 안정성 ' + (w.S * 100).toFixed(0) + '% (목표·성향에 따라 자동 조정, 점수는 달러 기준)</div>' +
     '<div class="chartbox"><canvas id="chart" height="' + Math.max(140, d.results.length * 30) + '"></canvas></div>' +
     cards +
     '<p class="disc">' + d.disclaimer + '<br/>' +

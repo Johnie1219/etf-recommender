@@ -297,6 +297,44 @@ def fetch_metrics(ticker: str):
 
 
 # ---------------------------------------------------------------------------
+# 2-1) 환율(USD/KRW) 조회
+#    - rate:     현재 1달러 = 몇 원 (yfinance "KRW=X", 실패 시 폴백 추정값)
+#    - change1y: 최근 1년 환율 변동률(%). 원화 환산 수익률 계산용.
+#                폴백이면 변동을 알 수 없어 None (원화 환산 수익률은 표시 안 함).
+#    환율 자체도 늘 변동하며, 여기 값은 참고용이다.
+# ---------------------------------------------------------------------------
+_FX_FALLBACK_RATE = 1385.0  # USD/KRW 대략값(폴백)
+_FX_CACHE = {}
+
+
+def fetch_fx():
+    cached = _FX_CACHE.get("KRW")
+    if cached is not None and time.time() - cached[0] < _CACHE_TTL_SEC:
+        return cached[1]
+
+    if _YF_OK:
+        try:
+            hist = yf.Ticker("KRW=X").history(period="1y", timeout=5)
+            if hist is not None and len(hist) > 30:
+                closes = hist["Close"].dropna()
+                rate = float(closes.iloc[-1])
+                rate_1y = float(closes.iloc[0])
+                change1y = (rate / rate_1y - 1.0) * 100.0 if rate_1y > 0 else None
+                result = {
+                    "rate": round(rate, 2),
+                    "change1y": round(change1y, 2) if change1y is not None else None,
+                    "source": "yfinance",
+                }
+                _FX_CACHE["KRW"] = (time.time(), result)
+                return result
+        except Exception:
+            pass
+
+    # 폴백: 대략 환율만, 변동률은 알 수 없음
+    return {"rate": _FX_FALLBACK_RATE, "change1y": None, "source": "fallback"}
+
+
+# ---------------------------------------------------------------------------
 # 3) 점수 공식 (프론트 설명과 1:1 일치)
 #
 #  3-1) 종목별 3개 세부점수(0~100)
@@ -390,12 +428,11 @@ def recommend(
         wanted = [e["ticker"] for e in ETF_POOL]
 
     # yfinance 는 종목당 네트워크 호출이라 순차로 돌리면 느리다(특히 무료 서버).
-    # 여러 종목을 동시에 받아 대기 시간을 크게 줄인다. (실패 시 각자 폴백은 그대로)
-    if wanted:
-        with ThreadPoolExecutor(max_workers=min(16, len(wanted))) as ex:
-            metric_list = list(ex.map(fetch_metrics, wanted))
-    else:
-        metric_list = []
+    # 종목 지표와 환율을 모두 동시에 받아 대기 시간을 크게 줄인다. (실패 시 각자 폴백)
+    with ThreadPoolExecutor(max_workers=min(16, max(1, len(wanted))) + 1) as ex:
+        fx_future = ex.submit(fetch_fx)
+        metric_list = list(ex.map(fetch_metrics, wanted)) if wanted else []
+    fx = fx_future.result()
 
     rows = []
     sources = set()
@@ -413,14 +450,25 @@ def recommend(
         sc = sub_scores(m)
         score = w["R"] * sc["R"] + w["D"] * sc["D"] + w["S"] * sc["S"]
         meta = POOL_BY_TICKER[t]
+
+        # 환율 적용 (점수에는 영향 없음, 참고용 표시)
+        price_krw = round(m["price"] * fx["rate"]) if m["price"] is not None else None
+        # 원화 환산 1년 수익률 ≈ (1+달러수익률)×(1+환율변동률) − 1
+        #   실시간 가격·환율이 둘 다 있을 때만 계산(폴백이면 환율 변동을 몰라 표시 안 함)
+        ret1y_krw = None
+        if m["source"] == "yfinance" and fx["change1y"] is not None:
+            ret1y_krw = round(((1 + m["ret1y"] / 100.0) * (1 + fx["change1y"] / 100.0) - 1) * 100.0, 2)
+
         rows.append({
             "ticker": t,
             "name": meta["name"],
             "cat": meta["cat"],
             "ret1y": m["ret1y"],
+            "ret1y_krw": ret1y_krw,
             "vol": m["vol"],
             "yield": m["yield"],
             "price": m["price"],
+            "price_krw": price_krw,
             "source": m["source"],
             "scores": sc,
             "score": round(score, 1),
@@ -439,9 +487,14 @@ def recommend(
         "risk": risk,
         "weights": w,
         "source": overall_source,
+        "fx": fx,
         "filters": {"dividends": dividends, "min_yield": min_yield, "top": top, "matched": matched},
         "results": rows,
-        "disclaimer": "교육·참고용입니다. 세금·매매수수료·환율은 반영하지 않습니다. 투자 권유가 아닙니다.",
+        "disclaimer": (
+            "교육·참고용입니다. 투자 권유가 아닙니다. "
+            "점수는 달러 기준 수익률·변동성·배당으로 계산하며, 세금·매매수수료는 반영하지 않습니다. "
+            "환율(USD/KRW)과 원화 환산 수익률은 참고로 표시하며 환율도 늘 변동합니다."
+        ),
     }
 
 

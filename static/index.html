@@ -274,6 +274,13 @@
   .catrow .cinfo b { font-size: 14px; }
   .catrow .cinfo small { font-size: 11px; color: var(--sub); }
   .catrow .cavg { font-weight: 700; font-size: 14px; }
+  /* 내 투자 요약 배너 */
+  .portsum { display: block; width: 100%; text-align: left; background: var(--card);
+    border: 1px solid var(--line); border-radius: var(--radius); padding: 16px 20px;
+    font-family: inherit; cursor: pointer; }
+  .portsum .ptitle { font-size: 13px; color: var(--sub); font-weight: 600; margin-bottom: 4px; }
+  .portsum .pval { font-size: 16px; font-weight: 700; color: var(--ink); }
+  .portsum .pmore { font-size: 12px; color: var(--blue); float: right; margin-top: 2px; }
   .skel-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
   .skel { background: linear-gradient(90deg,#ececef,#f6f6f8,#ececef); background-size: 200% 100%;
     animation: sh 1.2s infinite; border-radius: 6px; }
@@ -437,6 +444,9 @@
         <p class="hint">성향·목표·종목·필터를 바꾸면 아래 결과가 실시간으로 갱신됩니다.</p>
       </div>
     </div>
+
+    <!-- 내 투자 요약 (실거래가 있으면 표시) -->
+    <button id="portfolioSummary" class="portsum" hidden></button>
 
     <!-- 결과 (아래) -->
     <div class="panel">
@@ -1192,7 +1202,9 @@ async function renderTrades() {
   const listEl = document.getElementById('tradeList');
   if (!trades.length) {
     wrap.innerHTML = '<p style="color:var(--sub);font-size:13px;">아직 매수 기록이 없습니다. 위에서 추가해 보세요.</p>';
-    totalEl.innerHTML = ''; listWrap.hidden = true; return;
+    totalEl.innerHTML = ''; listWrap.hidden = true;
+    document.getElementById('portfolioSummary').hidden = true;
+    return;
   }
   const agg = {};
   trades.forEach(function (t) { const a = agg[t.ticker] || (agg[t.ticker] = { qty: 0, cost: 0 }); a.qty += t.qty; a.cost += t.qty * t.price; });
@@ -1226,13 +1238,22 @@ async function renderTrades() {
   }).join('');
   wrap.innerHTML = cards;
   drawAlloc(alloc);
+  const psum = document.getElementById('portfolioSummary');
   if (totVal > 0) {
     const pnl = totVal - totCost, pct = totCost > 0 ? pnl / totCost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
     totalEl.innerHTML = '<div class="ttotal">합계 — 원금 약 ' + won(totCost * rate) + ' → 평가 약 ' + won(totVal * rate) +
       ' <b class="' + cls + '">(' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '% · ' + wonS(pnl * rate) + ')</b>' +
       (haveAll ? '' : ' <span style="color:var(--sub)">※ 일부 현재가 누락</span>') + '</div>' +
       '<div class="hint" style="margin-top:6px;">환율 ' + Math.round(rate).toLocaleString('ko-KR') + '원' + (fx.source === 'fallback' ? ' (기본값)' : ' (실시간)') + ' 적용. 세금·수수료 미반영.</div>';
-  } else { totalEl.innerHTML = ''; }
+    // 결과 위 '내 투자' 요약 배너
+    psum.innerHTML = '<span class="pmore">실거래 자세히 ↗</span>' +
+      '<div class="ptitle">💼 내 투자 (' + tickers.length + '종목)</div>' +
+      '<div class="pval">' + won(totVal * rate) + ' <span class="' + cls + '">(' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '% · ' + wonS(pnl * rate) + ')</span></div>';
+    psum.hidden = false;
+  } else {
+    totalEl.innerHTML = '';
+    psum.hidden = true;
+  }
   listWrap.hidden = false;
   listEl.innerHTML = trades.slice().reverse().map(function (t) {
     return '<div class="trow"><span>' + t.date + ' · ' + t.ticker + ' · ' + t.qty + '주 @ $' + t.price + '</span><a data-del-trade="' + t.id + '">삭제</a></div>';
@@ -1270,6 +1291,12 @@ document.getElementById('tradePanel').addEventListener('change', function (e) {
 document.getElementById('tradePanel').addEventListener('click', function (e) {
   const del = e.target.closest('[data-del-trade]');
   if (del) { saveTrades(loadTrades().filter(function (t) { return t.id !== del.dataset.delTrade; })); renderTrades(); }
+});
+// '내 투자' 요약 누르면 실거래 탭으로 이동
+document.getElementById('portfolioSummary').addEventListener('click', function () {
+  document.querySelectorAll('#tabs .tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === 'trade'); });
+  document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.toggle('active', p.dataset.panel === 'trade'); });
+  document.getElementById('tradePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
 });
 
 // 초기화: 사용자 상태 → 즐겨찾기 → 종목 목록 → (URL 설정 복원) → 첫 결과 자동 표시

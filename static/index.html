@@ -262,14 +262,7 @@
   <div id="toast" class="toast"></div>
 
   <div class="layout">
-    <!-- 결과 (위) -->
-    <div class="panel">
-      <div id="result">
-        <div class="empty">불러오는 중…</div>
-      </div>
-    </div>
-
-    <!-- 입력 (아래) -->
+    <!-- 입력 (위) : 성향·목표·종목·필터 -->
     <div>
       <div class="panel">
         <!-- 항상 보이는 추천 조건 (모든 탭에서 보임) -->
@@ -361,7 +354,14 @@
           <div id="presets" class="presets"></div>
         </div>
 
-        <p class="hint">성향·목표·종목·필터를 바꾸면 위 결과가 실시간으로 갱신됩니다.</p>
+        <p class="hint">성향·목표·종목·필터를 바꾸면 아래 결과가 실시간으로 갱신됩니다.</p>
+      </div>
+    </div>
+
+    <!-- 결과 (아래) -->
+    <div class="panel">
+      <div id="result">
+        <div class="empty">불러오는 중…</div>
       </div>
     </div>
 
@@ -529,9 +529,6 @@ async function initUser() {
     if (r.status === 401) { location.href = '/login'; return; }
     d = await r.json();
   } catch (e) { return; }
-
-  // 개방 모드: 로그인 UI 없음, 즐겨찾기는 localStorage 사용
-  if (d.open) { favMode = 'local'; document.getElementById('userbar').innerHTML = ''; return; }
 
   favMode = 'server';
   // 사용자 바: (관리자면 승인 대기 링크) + 아이디 + 로그아웃

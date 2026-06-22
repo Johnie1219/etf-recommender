@@ -53,21 +53,6 @@ SESSION_COOKIE = "etf_session"
 _OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest"}
 
 
-def _admin_user():
-    """마스터(관리자) 아이디. ADMIN_USER 환경변수로 지정한 계정이 관리자."""
-    return os.environ.get("ADMIN_USER", "").strip().lower()
-
-
-def _accounts_enabled():
-    """ADMIN_USER 가 있으면 계정·로그인 모드, 없으면 개방 모드(로그인 없이 사용)."""
-    return bool(_admin_user())
-
-
-def is_admin(username: str) -> bool:
-    a = _admin_user()
-    return bool(a) and (username or "").strip().lower() == a
-
-
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -83,6 +68,7 @@ def init_db():
             username  TEXT UNIQUE NOT NULL,
             pw_hash   TEXT NOT NULL,
             approved  INTEGER NOT NULL DEFAULT 0,
+            is_admin  INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS favorites (
@@ -97,28 +83,19 @@ def init_db():
     # 기존 DB 업그레이드
     if "approved" not in cols:
         conn.execute("ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 0")
+    if "is_admin" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN is_admin INTEGER NOT NULL DEFAULT 0")
     if "username" not in cols and "email" in cols:
         conn.execute("ALTER TABLE users RENAME COLUMN email TO username")
-    # 관리자 계정: 있으면 승인 유지, 없고 ADMIN_PASSWORD 있으면 자동 생성(승인 상태)
-    admin = _admin_user()
-    if admin:
-        row = conn.execute("SELECT id FROM users WHERE username = ?", (admin,)).fetchone()
-        if row is not None:
-            conn.execute("UPDATE users SET approved = 1 WHERE username = ?", (admin,))
-        else:
-            pw = os.environ.get("ADMIN_PASSWORD", "")
-            if pw:
-                conn.execute(
-                    "INSERT INTO users (username, pw_hash, approved) VALUES (?, ?, 1)",
-                    (admin, hash_pw(pw)),
-                )
     conn.commit()
     conn.close()
 
 
 def get_user(uid):
     conn = get_db()
-    row = conn.execute("SELECT id, username, approved FROM users WHERE id = ?", (uid,)).fetchone()
+    row = conn.execute(
+        "SELECT id, username, approved, is_admin FROM users WHERE id = ?", (uid,)
+    ).fetchone()
     conn.close()
     return row
 
@@ -195,9 +172,6 @@ def _set_session_cookie(resp, user_id: int, request: Request):
 @app.middleware("http")
 async def auth_guard(request: Request, call_next):
     path = request.url.path
-    # 개방 모드(ADMIN_USER 미설정): 로그인 없이 누구나 사용
-    if not _accounts_enabled():
-        return await call_next(request)
     if path in _OPEN_PATHS or path.startswith("/static/"):
         return await call_next(request)
 
@@ -217,9 +191,9 @@ async def auth_guard(request: Request, call_next):
         if row is None:
             return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
         if path.startswith("/api/admin"):
-            if not is_admin(row["username"]):
+            if not row["is_admin"]:
                 return JSONResponse({"error": "권한이 없습니다."}, status_code=403)
-        elif not (row["approved"] or is_admin(row["username"])):
+        elif not (row["approved"] or row["is_admin"]):
             return JSONResponse({"error": "관리자 승인 대기중입니다."}, status_code=403)
     return await call_next(request)
 
@@ -345,21 +319,23 @@ async def api_register(request: Request):
         return JSONResponse({"error": "아이디는 영문/숫자/밑줄 3~20자여야 합니다."}, status_code=400)
     if len(password) < 8:
         return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
-    # 관리자 아이디면 자동 승인, 그 외는 승인 대기(approved=0)
-    approved = 1 if is_admin(username) else 0
     conn = get_db()
+    # 제일 먼저 가입한 사람이 마스터(관리자) — 자동 승인. 그 외는 승인 대기.
+    first = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"] == 0
+    admin = 1 if first else 0
+    approved = 1 if first else 0
     try:
         cur = conn.execute(
-            "INSERT INTO users (username, pw_hash, approved) VALUES (?, ?, ?)",
-            (username, hash_pw(password), approved),
+            "INSERT INTO users (username, pw_hash, approved, is_admin) VALUES (?, ?, ?, ?)",
+            (username, hash_pw(password), approved, admin),
         )
         conn.commit()
         user_id = cur.lastrowid
     except sqlite3.IntegrityError:
-        return JSONResponse({"error": "이미 사용 중인 아이디입니다."}, status_code=409)
-    finally:
         conn.close()
-    resp = JSONResponse({"ok": True, "approved": bool(approved)})
+        return JSONResponse({"error": "이미 사용 중인 아이디입니다."}, status_code=409)
+    conn.close()
+    resp = JSONResponse({"ok": True, "approved": bool(approved), "is_admin": bool(admin)})
     _set_session_cookie(resp, user_id, request)
     return resp
 
@@ -386,16 +362,15 @@ def api_logout():
 
 @app.get("/api/me")
 def api_me(request: Request):
-    # 개방 모드: 로그인 개념 없음
-    if not _accounts_enabled():
-        return {"open": True}
     uid = current_user_id(request)
     conn = get_db()
-    row = conn.execute("SELECT username, approved FROM users WHERE id = ?", (uid,)).fetchone()
+    row = conn.execute(
+        "SELECT username, approved, is_admin FROM users WHERE id = ?", (uid,)
+    ).fetchone()
     if row is None:
         conn.close()
         return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
-    admin = is_admin(row["username"])
+    admin = bool(row["is_admin"])
     out = {"username": row["username"], "approved": bool(row["approved"]) or admin, "is_admin": admin}
     if admin:
         out["pending_count"] = conn.execute(
@@ -450,8 +425,8 @@ async def api_admin_reject(request: Request):
     if uid is None:
         return JSONResponse({"error": "잘못된 요청입니다."}, status_code=400)
     conn = get_db()
-    row = conn.execute("SELECT username FROM users WHERE id = ?", (uid,)).fetchone()
-    if row is not None and is_admin(row["username"]):
+    row = conn.execute("SELECT is_admin FROM users WHERE id = ?", (uid,)).fetchone()
+    if row is not None and row["is_admin"]:
         conn.close()
         return JSONResponse({"error": "관리자 계정은 삭제할 수 없습니다."}, status_code=400)
     conn.execute("DELETE FROM favorites WHERE user_id = ?", (uid,))

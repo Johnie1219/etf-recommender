@@ -261,6 +261,19 @@
   .herocard { border: 1.5px solid var(--blue); background: #f5f9ff; }
   .herobadge { display: inline-block; background: var(--blue); color: #fff; font-size: 11px; font-weight: 700;
     padding: 2px 8px; border-radius: 999px; margin-right: 6px; vertical-align: middle; }
+  /* 순위 번호 (토스 랭킹 리스트) */
+  .rank { display: inline-block; min-width: 18px; color: var(--blue); font-weight: 700; font-size: 15px; margin-right: 6px; }
+  /* 테마 순위 (토스 '지금 뜨고 있는 카테고리') */
+  .themerank { margin-bottom: 14px; border: 1px solid var(--line); border-radius: 12px; padding: 4px 12px; }
+  .themerank > summary { list-style: none; cursor: pointer; font-size: 13px; font-weight: 600; color: var(--ink); padding: 8px 0; }
+  .themerank > summary::-webkit-details-marker { display: none; }
+  .catrow { display: flex; align-items: center; gap: 12px; width: 100%; background: none; border: none;
+    border-top: 1px solid var(--line); padding: 11px 0; cursor: pointer; font-family: inherit; text-align: left; }
+  .catrow .crank { color: var(--blue); font-weight: 700; font-size: 14px; min-width: 16px; }
+  .catrow .cinfo { flex: 1; display: flex; flex-direction: column; }
+  .catrow .cinfo b { font-size: 14px; }
+  .catrow .cinfo small { font-size: 11px; color: var(--sub); }
+  .catrow .cavg { font-weight: 700; font-size: 14px; }
   .skel-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
   .skel { background: linear-gradient(90deg,#ececef,#f6f6f8,#ececef); background-size: 200% 100%;
     animation: sh 1.2s infinite; border-radius: 6px; }
@@ -498,20 +511,20 @@ document.getElementById('divSeg').addEventListener('click', function () {
   g.style.pointerEvents = off ? 'none' : '';
 });
 
-// --- 테마 빠른 선택: 해당 분류의 종목만 체크 ---
-document.getElementById('catSeg').addEventListener('click', function (e) {
-  const b = e.target.closest('.pill');
-  if (!b) return;
-  this.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
-  b.classList.add('active');
-  favOnly = false; updateFavBtn();
-  const cat = b.dataset.cat;
+// --- 테마(카테고리) 선택: 해당 분류의 종목만 체크 (탭·테마순위에서 공용) ---
+function selectCategory(cat) {
+  setCatActive(cat);
   showCatDesc(cat);
   document.querySelectorAll('#checks input').forEach(function (c) {
     const item = poolList.find(function (x) { return x.ticker === c.value; });
     c.checked = (cat === '전체') || (item && item.cat === cat);
   });
   if (state.ran) run();
+}
+document.getElementById('catSeg').addEventListener('click', function (e) {
+  const b = e.target.closest('.pill');
+  if (!b) return;
+  selectCategory(b.dataset.cat);
 });
 function showCatDesc(cat) {
   const el = document.getElementById('catDesc');
@@ -744,6 +757,8 @@ async function toggleFav(ticker, btn) {
 document.getElementById('result').addEventListener('click', function (e) {
   const s = e.target.closest('.star');
   if (s) { toggleFav(s.dataset.ticker, s); return; }
+  const cr = e.target.closest('.catrow');
+  if (cr) { selectCategory(cr.dataset.cat); return; }
   const sp = e.target.closest('.spill');
   if (sp) { state.sort = sp.dataset.sort; if (lastData) render(lastData); return; }
   const more = e.target.closest('.more');
@@ -893,9 +908,9 @@ function range52(r) {
     '<div class="r52lab"><span>$' + lo + '</span><span>52주 범위</span><span>$' + hi + '</span></div></div>';
 }
 
-// 결과 카드 1장 (hero=1등 강조)
-function cardHtml(r, hero) {
-  const badge = hero ? '<span class="herobadge">🏆 1위</span> ' : '';
+// 결과 카드 1장 (hero=1등 강조, rank=순위 번호)
+function cardHtml(r, hero, rank) {
+  const badge = hero ? '<span class="herobadge">🏆 1위</span> ' : '<span class="rank">' + rank + '</span>';
   return '<div class="card' + (hero ? ' herocard' : '') + '">' +
     '<div class="top">' +
       '<div class="name">' + badge + r.ticker + ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
@@ -930,6 +945,28 @@ function skeletonHtml() {
          '<div class="skel skel-line w90"></div><div class="skel skel-line w40"></div></div>';
   }
   return s;
+}
+
+// 테마(카테고리) 순위 — 토스 '지금 뜨고 있는 카테고리' 벤치마킹.
+// 분석한 결과를 카테고리별로 묶어 평균 1년 수익률로 줄세우고, 상승 종목 수를 표시.
+function themeRankHtml(results) {
+  const by = {};
+  results.forEach(function (r) {
+    const a = by[r.cat] || (by[r.cat] = { n: 0, up: 0, sum: 0 });
+    a.n++; if (r.ret1y > 0) a.up++; a.sum += r.ret1y;
+  });
+  const cats = Object.keys(by);
+  if (cats.length < 2) return '';  // 한 종류만 보면 순위 의미 없음
+  cats.sort(function (x, y) { return (by[y].sum / by[y].n) - (by[x].sum / by[x].n); });
+  const rows = cats.map(function (c, i) {
+    const a = by[c], avg = a.sum / a.n, cls = avg >= 0 ? 'up' : 'down';
+    return '<button class="catrow" data-cat="' + c + '">' +
+      '<span class="crank">' + (i + 1) + '</span>' +
+      '<span class="cinfo"><b>' + c + '</b><small>' + a.n + '개 중 ' + a.up + '개 상승(1년)</small></span>' +
+      '<span class="cavg ' + cls + '">' + (avg >= 0 ? '+' : '') + avg.toFixed(1) + '%</span></button>';
+  }).join('');
+  return '<details class="themerank"><summary>📊 테마 순위 (1년 수익률 기준) ▾</summary>' + rows +
+    '<div class="hint" style="margin-top:6px;">테마를 누르면 그 테마만 분석합니다. 평균은 표시된 종목 기준 참고용.</div></details>';
 }
 
 function render(d) {
@@ -967,11 +1004,12 @@ function render(d) {
     header + lead +
     '<div class="wbar">' + filterSummary(d) + '</div>' +
     asof +
+    themeRankHtml(d.results) +
     '<div class="wbar">점수 가중치 — 수익성 ' + (w.R * 100).toFixed(0) + '% · 배당 ' + (w.D * 100).toFixed(0) +
       '% · 안정성 ' + (w.S * 100).toFixed(0) + '% (목표·성향에 따라 자동 조정, 점수는 달러 기준)</div>' +
     sortbar +
     '<div class="chartbox"><canvas id="chart" height="' + Math.max(140, sorted.length * 30) + '"></canvas></div>' +
-    cardHtml(hero, true) + rest.map(function (r) { return cardHtml(r, false); }).join('') +
+    cardHtml(hero, true, 1) + rest.map(function (r, i) { return cardHtml(r, false, i + 2); }).join('') +
     '<p class="disc">' + d.disclaimer + '<br/>' +
       '점수 = 수익성×' + w.R + ' + 배당×' + w.D + ' + 안정성×' + w.S +
       '. 세부점수는 수익성=(1년수익률+10)/50, 배당=배당수익률/5, 안정성=(35−변동성)/35 를 0~100으로 환산한 값(화면 설명과 계산식 동일).</p>';

@@ -365,11 +365,22 @@ def list_etfs():
 
 
 @app.get("/api/recommend")
-def recommend(goal: str = "diversified", risk: str = "neutral", tickers: str = ""):
+def recommend(
+    goal: str = "diversified",
+    risk: str = "neutral",
+    tickers: str = "",
+    dividends: str = "all",
+    min_yield: float = 0.0,
+    top: int = 0,
+):
     """
     goal: growth | dividend | diversified
     risk: conservative | neutral | aggressive
     tickers: 콤마구분. 비우면 전체 풀 대상.
+    dividends: all | yes(배당 주는 것만) | no(무배당만)  — 실제 배당수익률 기준
+    min_yield: 최소 배당수익률(%) 이상만 표시. 0이면 제한 없음.
+    top: 점수 상위 N개만 표시. 0이면 전체.
+    점수 계산식은 필터와 무관하게 동일하다. 필터는 '무엇을/몇 개 보여줄지'만 정한다.
     """
     w = compute_weights(goal, risk)
 
@@ -390,6 +401,14 @@ def recommend(goal: str = "diversified", risk: str = "neutral", tickers: str = "
     sources = set()
     for m in metric_list:
         t = m["ticker"]
+        y = m["yield"]
+        # --- 배당 필터 (실제 배당수익률 기준) ---
+        if dividends == "yes" and not (y > 0):
+            continue
+        if dividends == "no" and y > 0:
+            continue
+        if min_yield > 0 and y < min_yield:
+            continue
         sources.add(m["source"])
         sc = sub_scores(m)
         score = w["R"] * sc["R"] + w["D"] * sc["D"] + w["S"] * sc["S"]
@@ -409,12 +428,18 @@ def recommend(goal: str = "diversified", risk: str = "neutral", tickers: str = "
         })
 
     rows.sort(key=lambda r: r["score"], reverse=True)
+
+    matched = len(rows)  # 필터 통과한 전체 개수 (Top N 자르기 전)
+    if top and top > 0:
+        rows = rows[:top]
+
     overall_source = "yfinance" if sources == {"yfinance"} else ("fallback" if sources == {"fallback"} else "mixed")
     return {
         "goal": goal,
         "risk": risk,
         "weights": w,
         "source": overall_source,
+        "filters": {"dividends": dividends, "min_yield": min_yield, "top": top, "matched": matched},
         "results": rows,
         "disclaimer": "교육·참고용입니다. 세금·매매수수료·환율은 반영하지 않습니다. 투자 권유가 아닙니다.",
     }

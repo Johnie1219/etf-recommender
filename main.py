@@ -53,6 +53,16 @@ SESSION_COOKIE = "etf_session"
 _OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest"}
 
 
+def _admin_email():
+    """마스터(관리자) 이메일. ADMIN_EMAIL 환경변수로 지정한 계정이 관리자."""
+    return os.environ.get("ADMIN_EMAIL", "").strip().lower()
+
+
+def is_admin(email: str) -> bool:
+    a = _admin_email()
+    return bool(a) and (email or "").strip().lower() == a
+
+
 def get_db():
     conn = sqlite3.connect(DB_PATH)
     conn.row_factory = sqlite3.Row
@@ -67,6 +77,7 @@ def init_db():
             id        INTEGER PRIMARY KEY AUTOINCREMENT,
             email     TEXT UNIQUE NOT NULL,
             pw_hash   TEXT NOT NULL,
+            approved  INTEGER NOT NULL DEFAULT 0,
             created_at TEXT NOT NULL DEFAULT (datetime('now'))
         );
         CREATE TABLE IF NOT EXISTS favorites (
@@ -77,11 +88,26 @@ def init_db():
         );
         """
     )
+    # 기존 DB 업그레이드: approved 컬럼이 없으면 추가
+    cols = [r[1] for r in conn.execute("PRAGMA table_info(users)")]
+    if "approved" not in cols:
+        conn.execute("ALTER TABLE users ADD COLUMN approved INTEGER NOT NULL DEFAULT 0")
+    # 관리자 이메일은 항상 승인 상태로 유지(가입 전이면 가입 시 자동 승인)
+    admin = _admin_email()
+    if admin:
+        conn.execute("UPDATE users SET approved = 1 WHERE email = ?", (admin,))
     conn.commit()
     conn.close()
 
 
 init_db()
+
+
+def get_user(uid):
+    conn = get_db()
+    row = conn.execute("SELECT id, email, approved FROM users WHERE id = ?", (uid,)).fetchone()
+    conn.close()
+    return row
 
 
 def _secret() -> bytes:
@@ -154,12 +180,28 @@ async def auth_guard(request: Request, call_next):
     path = request.url.path
     if path in _OPEN_PATHS or path.startswith("/static/"):
         return await call_next(request)
-    if current_user_id(request) is not None:
-        return await call_next(request)
-    # 인증 안 됨: API 는 401, 일반 페이지는 로그인 화면으로
+
+    uid = current_user_id(request)
+    if uid is None:
+        # 미로그인: API 는 401, 일반 페이지는 로그인 화면으로
+        if path.startswith("/api"):
+            return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
+        return RedirectResponse("/login", status_code=302)
+
+    # 로그인됨. API 는 승인/권한 검사 (페이지는 통과시키고 화면에서 승인 대기 안내)
     if path.startswith("/api"):
-        return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
-    return RedirectResponse("/login", status_code=302)
+        # 상태 확인·로그아웃은 미승인자도 허용
+        if path in ("/api/me", "/api/logout"):
+            return await call_next(request)
+        row = get_user(uid)
+        if row is None:
+            return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
+        if path.startswith("/api/admin"):
+            if not is_admin(row["email"]):
+                return JSONResponse({"error": "권한이 없습니다."}, status_code=403)
+        elif not (row["approved"] or is_admin(row["email"])):
+            return JSONResponse({"error": "관리자 승인 대기중입니다."}, status_code=403)
+    return await call_next(request)
 
 
 _LOGIN_HTML = """<!DOCTYPE html>
@@ -283,10 +325,13 @@ async def api_register(request: Request):
         return JSONResponse({"error": "올바른 이메일 형식이 아닙니다."}, status_code=400)
     if len(password) < 8:
         return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
+    # 관리자 이메일이면 자동 승인, 그 외는 승인 대기(approved=0)
+    approved = 1 if is_admin(email) else 0
     conn = get_db()
     try:
         cur = conn.execute(
-            "INSERT INTO users (email, pw_hash) VALUES (?, ?)", (email, hash_pw(password))
+            "INSERT INTO users (email, pw_hash, approved) VALUES (?, ?, ?)",
+            (email, hash_pw(password), approved),
         )
         conn.commit()
         user_id = cur.lastrowid
@@ -294,7 +339,7 @@ async def api_register(request: Request):
         return JSONResponse({"error": "이미 가입된 이메일입니다."}, status_code=409)
     finally:
         conn.close()
-    resp = JSONResponse({"ok": True})
+    resp = JSONResponse({"ok": True, "approved": bool(approved)})
     _set_session_cookie(resp, user_id, request)
     return resp
 
@@ -323,11 +368,74 @@ def api_logout():
 def api_me(request: Request):
     uid = current_user_id(request)
     conn = get_db()
-    row = conn.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
-    conn.close()
+    row = conn.execute("SELECT email, approved FROM users WHERE id = ?", (uid,)).fetchone()
     if row is None:
+        conn.close()
         return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
-    return {"email": row["email"]}
+    admin = is_admin(row["email"])
+    out = {"email": row["email"], "approved": bool(row["approved"]) or admin, "is_admin": admin}
+    if admin:
+        out["pending_count"] = conn.execute(
+            "SELECT COUNT(*) AS c FROM users WHERE approved = 0"
+        ).fetchone()["c"]
+    conn.close()
+    return out
+
+
+# ---- 관리자(마스터) 전용: 가입 승인 관리 ----
+@app.get("/api/admin/users")
+def api_admin_users():
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT id, email, approved, created_at FROM users ORDER BY approved, created_at"
+    ).fetchall()
+    conn.close()
+    pending = [{"id": r["id"], "email": r["email"], "created_at": r["created_at"]}
+               for r in rows if not r["approved"]]
+    approved = [{"id": r["id"], "email": r["email"]} for r in rows if r["approved"]]
+    return {"pending": pending, "approved": approved}
+
+
+async def _read_target_id(request: Request):
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    if not isinstance(body, dict):
+        return None
+    try:
+        return int(body.get("id"))
+    except (TypeError, ValueError):
+        return None
+
+
+@app.post("/api/admin/approve")
+async def api_admin_approve(request: Request):
+    uid = await _read_target_id(request)
+    if uid is None:
+        return JSONResponse({"error": "잘못된 요청입니다."}, status_code=400)
+    conn = get_db()
+    conn.execute("UPDATE users SET approved = 1 WHERE id = ?", (uid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
+
+
+@app.post("/api/admin/reject")
+async def api_admin_reject(request: Request):
+    uid = await _read_target_id(request)
+    if uid is None:
+        return JSONResponse({"error": "잘못된 요청입니다."}, status_code=400)
+    conn = get_db()
+    row = conn.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
+    if row is not None and is_admin(row["email"]):
+        conn.close()
+        return JSONResponse({"error": "관리자 계정은 삭제할 수 없습니다."}, status_code=400)
+    conn.execute("DELETE FROM favorites WHERE user_id = ?", (uid,))
+    conn.execute("DELETE FROM users WHERE id = ?", (uid,))
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 @app.get("/api/favorites")

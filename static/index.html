@@ -141,6 +141,17 @@
   .pill:hover { border-color: #c7c7cc; }
   .pill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
 
+  /* 로그인 사용자 표시 / 로그아웃 */
+  .hrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
+  .userbar { display: flex; align-items: center; gap: 10px; white-space: nowrap; flex-shrink: 0; padding-top: 4px; }
+  .userbar .uemail { font-size: 13px; color: var(--sub); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
+  .userbar a { font-size: 13px; color: var(--blue); cursor: pointer; text-decoration: none; font-weight: 600; }
+
+  /* 즐겨찾기 ★ */
+  .star { background: none; border: none; cursor: pointer; font-size: 20px; line-height: 1; color: #d2d2d7; padding: 0 2px; font-family: inherit; }
+  .star.on { color: var(--blue); }
+  .favsel { width: 100%; margin-top: 8px; }
+
   .btn {
     width: 100%;
     border: none;
@@ -198,8 +209,13 @@
 </head>
 <body>
   <header>
-    <h1>ETF 추천·분석</h1>
-    <p>위험 성향과 목표를 고르면, 대표 미국 ETF를 점수화해 보여줍니다.</p>
+    <div class="hrow">
+      <div>
+        <h1>ETF 추천·분석</h1>
+        <p>위험 성향과 목표를 고르면, 대표 미국 ETF를 점수화해 보여줍니다.</p>
+      </div>
+      <div class="userbar" id="userbar"></div>
+    </div>
   </header>
 
   <div id="banner" style="display:none;"></div>
@@ -244,6 +260,7 @@
               <button class="pill" data-cat="분산">분산</button>
               <button class="pill" data-cat="섹터">섹터</button>
             </div>
+            <button class="pill favsel" id="favSel">⭐ 즐겨찾기만 보기</button>
           </div>
 
           <div class="group">
@@ -307,6 +324,7 @@ const API = '';
 const state = { risk: 'neutral', goal: 'diversified', dividends: 'all', minYield: '0', top: '0', ran: false };
 let chart = null;
 let poolList = [];  // 현재 종목 목록(티커·분류) — 테마 빠른 선택에 사용
+let favorites = new Set();  // 내 즐겨찾기 티커
 
 const CAT_LABEL = { growth: '성장', dividend: '배당', diversified: '분산' };
 const RISK_LABEL = { conservative: '안정형', neutral: '중립형', aggressive: '공격형' };
@@ -370,11 +388,25 @@ document.getElementById('catSeg').addEventListener('click', function (e) {
   if (!b) return;
   this.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
   b.classList.add('active');
+  document.getElementById('favSel').classList.remove('active');
   const cat = b.dataset.cat;
   document.querySelectorAll('#checks input').forEach(function (c) {
     const item = poolList.find(function (x) { return x.ticker === c.value; });
     c.checked = (cat === '전체') || (item && item.cat === cat);
   });
+  if (state.ran) run();
+});
+
+// --- 즐겨찾기만 보기: 내 즐겨찾기 종목만 체크 ---
+document.getElementById('favSel').addEventListener('click', function () {
+  document.querySelectorAll('#catSeg .pill').forEach(function (p) { p.classList.remove('active'); });
+  this.classList.add('active');
+  if (favorites.size === 0) {
+    showBanner('⭐ 아직 즐겨찾기한 종목이 없습니다. 추천 결과 카드의 ★을 눌러 추가하세요.');
+  } else {
+    hideBanner();
+  }
+  document.querySelectorAll('#checks input').forEach(function (c) { c.checked = favorites.has(c.value); });
   if (state.ran) run();
 });
 
@@ -418,7 +450,53 @@ function setCatActive(cat) {
   document.querySelectorAll('#catSeg .pill').forEach(function (p) {
     p.classList.toggle('active', p.dataset.cat === cat);
   });
+  document.getElementById('favSel').classList.remove('active');
 }
+
+// --- 로그인 사용자 표시 + 로그아웃 ---
+async function initUser() {
+  try {
+    const r = await fetch('/api/me');
+    if (r.status === 401) { location.href = '/login'; return; }
+    const d = await r.json();
+    document.getElementById('userbar').innerHTML =
+      '<span class="uemail" title="' + d.email + '">' + d.email + '</span>' +
+      '<a id="logoutLink">로그아웃</a>';
+    document.getElementById('logoutLink').onclick = async function () {
+      try { await fetch('/api/logout', { method: 'POST' }); } catch (e) {}
+      location.href = '/login';
+    };
+  } catch (e) {}
+}
+
+// --- 즐겨찾기 불러오기/토글 ---
+async function loadFavorites() {
+  try {
+    const r = await fetch('/api/favorites');
+    if (r.ok) { const d = await r.json(); favorites = new Set(d.tickers); }
+  } catch (e) {}
+}
+async function toggleFav(ticker, btn) {
+  const on = favorites.has(ticker);
+  try {
+    if (on) {
+      await fetch('/api/favorites?ticker=' + encodeURIComponent(ticker), { method: 'DELETE' });
+      favorites.delete(ticker);
+    } else {
+      await fetch('/api/favorites', {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ticker: ticker })
+      });
+      favorites.add(ticker);
+    }
+    if (btn) btn.classList.toggle('on', favorites.has(ticker));
+  } catch (e) {}
+}
+// 결과 카드의 ★ 클릭 (이벤트 위임)
+document.getElementById('result').addEventListener('click', function (e) {
+  const s = e.target.closest('.star');
+  if (s) { toggleFav(s.dataset.ticker, s); }
+});
 
 // 종목을 손으로 바꾸면 '테마' 빠른선택 강조는 헷갈리니 해제(전체일 때만 유지)
 document.getElementById('checks').addEventListener('change', function () { setCatActive(null); if (state.ran) run(); });
@@ -533,7 +611,10 @@ function render(d) {
     return '<div class="card">' +
       '<div class="top">' +
         '<div class="name">' + r.ticker + ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
-        '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
+        '<div style="display:flex;align-items:center;gap:10px;">' +
+          '<button class="star' + (favorites.has(r.ticker) ? ' on' : '') + '" data-ticker="' + r.ticker + '" title="즐겨찾기" aria-label="즐겨찾기">★</button>' +
+          '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
+        '</div>' +
       '</div>' +
       '<div class="reason">' + r.reason + '</div>' +
       '<div class="metrics">' +
@@ -595,6 +676,9 @@ function drawChart(rows) {
   });
 }
 
+// 초기화: 로그인 사용자·즐겨찾기·종목 목록 불러오기
+initUser();
+loadFavorites();
 loadPool();
 </script>
 </body>

@@ -12,6 +12,9 @@ _verify.js
 _probe.txt
 _synctest*.txt
 
+# 데이터(SQLite DB·세션키) — 서버/NAS에 저장, 깃에 올리지 않음
+data/
+
 # OS
 .DS_Store
 Thumbs.db

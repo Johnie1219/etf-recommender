@@ -20,6 +20,8 @@ import os
 import time
 import hmac
 import hashlib
+import sqlite3
+import re
 from concurrent.futures import ThreadPoolExecutor
 
 # yfinance 는 선택적 의존성. 설치/네트워크 실패해도 앱은 폴백으로 동작해야 한다.
@@ -37,46 +39,125 @@ BASE_DIR = os.path.dirname(os.path.abspath(__file__))
 STATIC_DIR = os.path.join(BASE_DIR, "static")
 
 # ---------------------------------------------------------------------------
-# 0) 접속 비밀번호 (선택)
-#    - 환경변수 APP_PASSWORD 가 있으면 모든 페이지·API 에 로그인 요구.
-#    - 없으면(로컬 개발 등) 보호 없이 그대로 동작.
-#    - 비밀번호 자체는 쿠키에 담지 않고, 비밀번호로 만든 HMAC 토큰만 쿠키에 저장.
-#      (비밀번호를 모르면 토큰을 만들 수 없고, 비밀번호를 바꾸면 기존 쿠키는 무효화.)
+# 0) 회원가입·로그인 + 즐겨찾기 저장 (SQLite, 표준 라이브러리만)
+#    - 데이터는 DATA_DIR(기본 ./data) 아래 app.db 파일에 저장한다.
+#      NAS 등에서는 DATA_DIR 을 영구 볼륨으로 지정하면 그곳에 저장된다.
+#    - 비밀번호는 PBKDF2-HMAC-SHA256(솔트+20만회)로 해시해 저장(원문 저장 안 함).
+#    - 로그인 상태는 서명 쿠키(user_id + HMAC)로 유지. 서버 비밀키로 위조 방지.
 # ---------------------------------------------------------------------------
-AUTH_COOKIE = "etf_auth"
-# 로그인 없이도 열어둘 경로: 로그인 화면 + 홈화면 아이콘/매니페스트(민감정보 아님).
-_AUTH_OPEN_PATHS = {"/login", "/logout", "/favicon.ico", "/manifest.webmanifest"}
+DATA_DIR = os.environ.get("DATA_DIR", os.path.join(BASE_DIR, "data"))
+os.makedirs(DATA_DIR, exist_ok=True)
+DB_PATH = os.path.join(DATA_DIR, "app.db")
+SESSION_COOKIE = "etf_session"
+# 로그인 없이 열어둘 경로(로그인/회원가입 화면·API, 아이콘·매니페스트)
+_OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest"}
 
 
-def _app_password():
-    return os.environ.get("APP_PASSWORD", "").strip()
+def get_db():
+    conn = sqlite3.connect(DB_PATH)
+    conn.row_factory = sqlite3.Row
+    return conn
 
 
-def _auth_token(pw: str) -> str:
-    """비밀번호로 만든 결정적 HMAC 토큰(쿠키 값)."""
-    return hmac.new(pw.encode("utf-8"), b"etf-recommender-auth-v1", hashlib.sha256).hexdigest()
+def init_db():
+    conn = get_db()
+    conn.executescript(
+        """
+        CREATE TABLE IF NOT EXISTS users (
+            id        INTEGER PRIMARY KEY AUTOINCREMENT,
+            email     TEXT UNIQUE NOT NULL,
+            pw_hash   TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now'))
+        );
+        CREATE TABLE IF NOT EXISTS favorites (
+            user_id   INTEGER NOT NULL,
+            ticker    TEXT NOT NULL,
+            created_at TEXT NOT NULL DEFAULT (datetime('now')),
+            PRIMARY KEY (user_id, ticker)
+        );
+        """
+    )
+    conn.commit()
+    conn.close()
+
+
+init_db()
+
+
+def _secret() -> bytes:
+    """세션 서명용 비밀키. 환경변수 SECRET_KEY 우선, 없으면 DATA_DIR에 생성·보관
+    (재시작해도 로그인 유지). NAS 운영 시 SECRET_KEY 를 직접 지정하면 더 안전."""
+    s = os.environ.get("SECRET_KEY", "").strip()
+    if s:
+        return s.encode("utf-8")
+    keyfile = os.path.join(DATA_DIR, "secret.key")
+    if os.path.exists(keyfile):
+        with open(keyfile, "rb") as f:
+            return f.read()
+    key = os.urandom(32)
+    with open(keyfile, "wb") as f:
+        f.write(key)
+    return key
+
+
+def hash_pw(password: str) -> str:
+    salt = os.urandom(16)
+    dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), salt, 200000)
+    return salt.hex() + "$" + dk.hex()
+
+
+def verify_pw(password: str, stored: str) -> bool:
+    try:
+        salt_hex, dk_hex = stored.split("$")
+        dk = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), bytes.fromhex(salt_hex), 200000)
+        return hmac.compare_digest(dk.hex(), dk_hex)
+    except Exception:
+        return False
+
+
+def make_session(user_id: int) -> str:
+    sig = hmac.new(_secret(), str(user_id).encode("utf-8"), hashlib.sha256).hexdigest()
+    return f"{user_id}.{sig}"
+
+
+def parse_session(token: str):
+    try:
+        uid, sig = token.rsplit(".", 1)
+        expect = hmac.new(_secret(), uid.encode("utf-8"), hashlib.sha256).hexdigest()
+        if hmac.compare_digest(sig, expect):
+            return int(uid)
+    except Exception:
+        pass
+    return None
+
+
+def current_user_id(request: Request):
+    token = request.cookies.get(SESSION_COOKIE, "")
+    return parse_session(token) if token else None
 
 
 def _is_https(request: Request) -> bool:
-    # Render 등은 프록시 뒤에서 HTTPS 종료 → x-forwarded-proto 로 판별.
+    # NAS/프록시 뒤에서 HTTPS 종료 시 x-forwarded-proto 로 판별.
     return request.headers.get("x-forwarded-proto", request.url.scheme) == "https"
+
+
+def _set_session_cookie(resp, user_id: int, request: Request):
+    resp.set_cookie(
+        SESSION_COOKIE, make_session(user_id),
+        max_age=60 * 60 * 24 * 30,  # 30일
+        httponly=True, samesite="lax", secure=_is_https(request),
+    )
 
 
 @app.middleware("http")
 async def auth_guard(request: Request, call_next):
-    pw = _app_password()
-    if not pw:
-        return await call_next(request)  # 비밀번호 미설정 → 보호 없음
-
-    if request.url.path in _AUTH_OPEN_PATHS or request.url.path.startswith("/static/pwa/"):
+    path = request.url.path
+    if path in _OPEN_PATHS or path.startswith("/static/"):
         return await call_next(request)
-
-    cookie = request.cookies.get(AUTH_COOKIE, "")
-    if cookie and hmac.compare_digest(cookie, _auth_token(pw)):
+    if current_user_id(request) is not None:
         return await call_next(request)
-
     # 인증 안 됨: API 는 401, 일반 페이지는 로그인 화면으로
-    if request.url.path.startswith("/api"):
+    if path.startswith("/api"):
         return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
     return RedirectResponse("/login", status_code=302)
 
@@ -100,41 +181,73 @@ _LOGIN_HTML = """<!DOCTYPE html>
     padding:32px 28px; width:100%; max-width:360px; }
   h1 { font-size:22px; font-weight:700; margin:0; letter-spacing:-0.02em; }
   .sub { color:var(--sub); font-size:14px; margin:8px 0 22px; }
+  label { display:block; font-size:13px; font-weight:600; color:var(--sub); margin:14px 0 6px; }
   input { width:100%; border:1px solid var(--line); border-radius:12px; padding:13px 14px;
     font-size:16px; font-family:inherit; color:var(--ink); outline:none; }
   input:focus { border-color:var(--blue); }
   button { width:100%; border:none; background:var(--blue); color:#fff; border-radius:999px;
     padding:13px; font-size:15px; font-weight:600; font-family:inherit; cursor:pointer;
-    margin-top:12px; transition:opacity .15s ease; }
+    margin-top:18px; transition:opacity .15s ease; }
   button:hover { opacity:.9; }
+  .toggle { text-align:center; font-size:13px; color:var(--sub); margin-top:16px; }
+  .toggle a { color:var(--blue); cursor:pointer; text-decoration:none; font-weight:600; }
   .err { color:#c0392b; font-size:13px; min-height:18px; margin:12px 0 0; }
 </style>
 </head>
 <body>
   <div class="card">
     <h1>ETF 추천·분석</h1>
-    <p class="sub">접속하려면 비밀번호를 입력하세요.</p>
+    <p class="sub" id="sub">로그인하고 즐겨찾기를 사용해 보세요.</p>
     <form id="f">
-      <input id="pw" type="password" autocomplete="current-password" placeholder="비밀번호" autofocus />
-      <button type="submit">접속</button>
+      <label for="email">이메일</label>
+      <input id="email" type="email" autocomplete="username" placeholder="you@example.com" autofocus />
+      <label for="pw">비밀번호</label>
+      <input id="pw" type="password" autocomplete="current-password" placeholder="비밀번호 (8자 이상)" />
+      <button type="submit" id="submitBtn">로그인</button>
     </form>
     <p class="err" id="err"></p>
+    <p class="toggle" id="toggle">계정이 없으신가요? <a id="toggleLink">회원가입</a></p>
   </div>
 <script>
+  var mode = 'login';  // 'login' | 'register'
   var f = document.getElementById('f'), err = document.getElementById('err');
+  var submitBtn = document.getElementById('submitBtn');
+  var sub = document.getElementById('sub'), toggle = document.getElementById('toggle');
+  var pw = document.getElementById('pw');
+
+  // 토글 링크(로그인 ↔ 회원가입)는 innerHTML로 바뀌므로 이벤트 위임으로 처리
+  toggle.addEventListener('click', function (e) {
+    if (e.target && e.target.id === 'toggleLink') {
+      err.textContent = '';
+      mode = (mode === 'login') ? 'register' : 'login';
+      if (mode === 'register') {
+        submitBtn.textContent = '회원가입';
+        sub.textContent = '이메일과 비밀번호로 가입하세요.';
+        pw.setAttribute('autocomplete', 'new-password');
+        toggle.innerHTML = '이미 계정이 있으신가요? <a id="toggleLink">로그인</a>';
+      } else {
+        submitBtn.textContent = '로그인';
+        sub.textContent = '로그인하고 즐겨찾기를 사용해 보세요.';
+        pw.setAttribute('autocomplete', 'current-password');
+        toggle.innerHTML = '계정이 없으신가요? <a id="toggleLink">회원가입</a>';
+      }
+    }
+  });
+
   f.addEventListener('submit', async function (e) {
     e.preventDefault();
     err.textContent = '';
-    var pw = document.getElementById('pw').value;
+    var email = document.getElementById('email').value.trim();
+    var password = pw.value;
     try {
-      var r = await fetch('/login', {
+      var r = await fetch('/api/' + mode, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ password: pw })
+        body: JSON.stringify({ email: email, password: password })
       });
       if (r.ok) { location.href = '/'; return; }
       var d = await r.json().catch(function () { return {}; });
-      err.textContent = d.error || '비밀번호가 올바르지 않습니다.';
+      err.textContent = d.error || '요청을 처리하지 못했습니다.';
     } catch (e2) {
       err.textContent = '서버에 연결하지 못했습니다.';
     }
@@ -143,36 +256,121 @@ _LOGIN_HTML = """<!DOCTYPE html>
 </body>
 </html>"""
 
+_EMAIL_RE = re.compile(r"^[^@\s]+@[^@\s]+\.[^@\s]+$")
+
 
 @app.get("/login")
 def login_page():
     return HTMLResponse(_LOGIN_HTML)
 
 
-@app.post("/login")
-async def login_submit(request: Request):
-    pw = _app_password()
+async def _read_credentials(request: Request):
     try:
         body = await request.json()
     except Exception:
         body = {}
-    given = (body.get("password") if isinstance(body, dict) else "") or ""
-    if pw and hmac.compare_digest(given.strip(), pw):
-        resp = JSONResponse({"ok": True})
-        resp.set_cookie(
-            AUTH_COOKIE, _auth_token(pw),
-            max_age=60 * 60 * 24 * 30,  # 30일
-            httponly=True, samesite="lax", secure=_is_https(request),
+    if not isinstance(body, dict):
+        body = {}
+    email = (body.get("email") or "").strip().lower()
+    password = body.get("password") or ""
+    return email, password
+
+
+@app.post("/api/register")
+async def api_register(request: Request):
+    email, password = await _read_credentials(request)
+    if not _EMAIL_RE.match(email):
+        return JSONResponse({"error": "올바른 이메일 형식이 아닙니다."}, status_code=400)
+    if len(password) < 8:
+        return JSONResponse({"error": "비밀번호는 8자 이상이어야 합니다."}, status_code=400)
+    conn = get_db()
+    try:
+        cur = conn.execute(
+            "INSERT INTO users (email, pw_hash) VALUES (?, ?)", (email, hash_pw(password))
         )
-        return resp
-    return JSONResponse({"ok": False, "error": "비밀번호가 올바르지 않습니다."}, status_code=401)
-
-
-@app.get("/logout")
-def logout():
-    resp = RedirectResponse("/login", status_code=302)
-    resp.delete_cookie(AUTH_COOKIE)
+        conn.commit()
+        user_id = cur.lastrowid
+    except sqlite3.IntegrityError:
+        return JSONResponse({"error": "이미 가입된 이메일입니다."}, status_code=409)
+    finally:
+        conn.close()
+    resp = JSONResponse({"ok": True})
+    _set_session_cookie(resp, user_id, request)
     return resp
+
+
+@app.post("/api/login")
+async def api_login(request: Request):
+    email, password = await _read_credentials(request)
+    conn = get_db()
+    row = conn.execute("SELECT id, pw_hash FROM users WHERE email = ?", (email,)).fetchone()
+    conn.close()
+    if row is None or not verify_pw(password, row["pw_hash"]):
+        return JSONResponse({"error": "이메일 또는 비밀번호가 올바르지 않습니다."}, status_code=401)
+    resp = JSONResponse({"ok": True})
+    _set_session_cookie(resp, row["id"], request)
+    return resp
+
+
+@app.post("/api/logout")
+def api_logout():
+    resp = JSONResponse({"ok": True})
+    resp.delete_cookie(SESSION_COOKIE)
+    return resp
+
+
+@app.get("/api/me")
+def api_me(request: Request):
+    uid = current_user_id(request)
+    conn = get_db()
+    row = conn.execute("SELECT email FROM users WHERE id = ?", (uid,)).fetchone()
+    conn.close()
+    if row is None:
+        return JSONResponse({"error": "로그인이 필요합니다."}, status_code=401)
+    return {"email": row["email"]}
+
+
+@app.get("/api/favorites")
+def api_favorites_list(request: Request):
+    uid = current_user_id(request)
+    conn = get_db()
+    rows = conn.execute(
+        "SELECT ticker FROM favorites WHERE user_id = ? ORDER BY created_at", (uid,)
+    ).fetchall()
+    conn.close()
+    return {"tickers": [r["ticker"] for r in rows]}
+
+
+@app.post("/api/favorites")
+async def api_favorites_add(request: Request):
+    uid = current_user_id(request)
+    try:
+        body = await request.json()
+    except Exception:
+        body = {}
+    ticker = (body.get("ticker") if isinstance(body, dict) else "") or ""
+    ticker = ticker.strip().upper()
+    if ticker not in POOL_BY_TICKER:
+        return JSONResponse({"error": "알 수 없는 종목입니다."}, status_code=400)
+    conn = get_db()
+    conn.execute(
+        "INSERT OR IGNORE INTO favorites (user_id, ticker) VALUES (?, ?)", (uid, ticker)
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True, "ticker": ticker}
+
+
+@app.delete("/api/favorites")
+def api_favorites_remove(request: Request, ticker: str = ""):
+    uid = current_user_id(request)
+    conn = get_db()
+    conn.execute(
+        "DELETE FROM favorites WHERE user_id = ? AND ticker = ?", (uid, ticker.strip().upper())
+    )
+    conn.commit()
+    conn.close()
+    return {"ok": True}
 
 
 # 홈화면 추가(PWA)용 웹 매니페스트. 아이콘은 static/pwa/ 에 둔다.

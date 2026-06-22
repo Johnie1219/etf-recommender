@@ -144,6 +144,9 @@
   #checksDetails[open] .caret { transform: rotate(180deg); }
   #selCount { color: var(--blue); font-weight: 600; }
   .catdesc { font-size: 12px; color: var(--sub); line-height: 1.5; margin-top: 10px; min-height: 1px; }
+  .searchbox { width: 100%; border: 1px solid var(--line); border-radius: 12px; padding: 11px 14px;
+    font-size: 15px; font-family: inherit; color: var(--ink); outline: none; background: var(--card); margin-bottom: 12px; }
+  .searchbox:focus { border-color: var(--blue); }
   .chkgroup { margin-top: 12px; }
   .chkhead { font-size: 12px; font-weight: 600; color: var(--blue); margin: 8px 0 6px; }
 
@@ -368,6 +371,7 @@
           </div>
 
           <div class="group">
+            <input id="tickerSearch" class="searchbox" type="search" placeholder="🔍 종목 검색 (티커·이름)" />
             <details id="checksDetails">
               <summary class="csum"><span class="label" style="margin:0;">분석할 종목 <span id="selCount"></span></span><span class="caret">▾</span></summary>
               <div class="selrow" style="margin-top:12px;">
@@ -796,6 +800,20 @@ document.getElementById('selNone').onclick = function () {
 function selectedTickers() {
   return Array.from(document.querySelectorAll('#checks input:checked')).map(function (c) { return c.value; });
 }
+// 종목 검색: 티커·이름으로 체크박스 목록 필터(선택 상태는 그대로)
+document.getElementById('tickerSearch').addEventListener('input', function () {
+  const q = this.value.trim().toLowerCase();
+  if (q) document.getElementById('checksDetails').setAttribute('open', '');
+  document.querySelectorAll('#checks .chk').forEach(function (lbl) {
+    const tk = lbl.querySelector('input').value.toLowerCase();
+    const txt = (lbl.textContent || '').toLowerCase();
+    lbl.style.display = (!q || tk.indexOf(q) >= 0 || txt.indexOf(q) >= 0) ? '' : 'none';
+  });
+  document.querySelectorAll('#checks .chkgroup').forEach(function (g) {
+    const any = Array.prototype.some.call(g.querySelectorAll('.chk'), function (l) { return l.style.display !== 'none'; });
+    g.style.display = any ? '' : 'none';
+  });
+});
 // 접힌 '분석할 종목' 요약에 선택 개수 표시
 function updateSelCount() {
   const el = document.getElementById('selCount');
@@ -1312,6 +1330,13 @@ document.getElementById('portfolioSummary').addEventListener('click', function (
   state.ran = true;   // 이후 변경은 실시간 갱신
   run();              // 페이지 열면 기본값(중립형·배당) 또는 공유 링크 설정으로 결과 바로 표시
 })();
+
+// 서비스 워커 등록 (오프라인·즉시 로딩·설치). 실패해도 앱은 정상 동작.
+if ('serviceWorker' in navigator) {
+  window.addEventListener('load', function () {
+    navigator.serviceWorker.register('/sw.js').catch(function () {});
+  });
+}
 </script>
 </body>
 </html>

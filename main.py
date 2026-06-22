@@ -14,7 +14,7 @@
 """
 
 from fastapi import FastAPI, Request
-from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, HTMLResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse, HTMLResponse, Response
 from fastapi.staticfiles import StaticFiles
 import os
 import time
@@ -50,7 +50,7 @@ os.makedirs(DATA_DIR, exist_ok=True)
 DB_PATH = os.path.join(DATA_DIR, "app.db")
 SESSION_COOKIE = "etf_session"
 # 로그인 없이 열어둘 경로(로그인/회원가입 화면·API, 아이콘·매니페스트)
-_OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest", "/healthz"}
+_OPEN_PATHS = {"/login", "/api/login", "/api/register", "/favicon.ico", "/manifest.webmanifest", "/healthz", "/sw.js"}
 
 
 def _accounts_enabled():
@@ -524,6 +524,45 @@ def manifest():
 def healthz():
     """헬스체크(인프라용). 로그인 없이 접근 가능 — 모니터링/깨우기 핑에 사용."""
     return {"ok": True, "yfinance": _YF_OK}
+
+
+# 서비스 워커: 앱 셸을 캐시해 오프라인·즉시 로딩. /api 는 항상 네트워크(최신 시세).
+_SW_JS = """
+const CACHE = 'etf-shell-v1';
+const SHELL = ['/', '/manifest.webmanifest',
+  '/static/pwa/icon-192.png', '/static/pwa/icon-512.png', '/static/pwa/apple-touch-icon.png'];
+self.addEventListener('install', function (e) {
+  e.waitUntil(caches.open(CACHE).then(function (c) { return c.addAll(SHELL); }).then(function () { return self.skipWaiting(); }));
+});
+self.addEventListener('activate', function (e) {
+  e.waitUntil(caches.keys().then(function (ks) {
+    return Promise.all(ks.filter(function (k) { return k !== CACHE; }).map(function (k) { return caches.delete(k); }));
+  }).then(function () { return self.clients.claim(); }));
+});
+self.addEventListener('fetch', function (e) {
+  if (e.request.method !== 'GET') return;
+  var url = new URL(e.request.url);
+  if (url.pathname.indexOf('/api') === 0 || url.pathname === '/healthz') return; // 항상 네트워크
+  // 네트워크 우선, 실패하면 캐시(오프라인). 같은 출처만 캐시.
+  e.respondWith(
+    fetch(e.request).then(function (res) {
+      if (url.origin === self.location.origin) {
+        var copy = res.clone();
+        caches.open(CACHE).then(function (c) { c.put(e.request, copy); }).catch(function () {});
+      }
+      return res;
+    }).catch(function () {
+      return caches.match(e.request).then(function (m) { return m || caches.match('/'); });
+    })
+  );
+});
+"""
+
+
+@app.get("/sw.js")
+def service_worker():
+    return Response(_SW_JS, media_type="application/javascript",
+                    headers={"Cache-Control": "no-cache"})
 
 # ---------------------------------------------------------------------------
 # 1) 추천 대상 ETF 고정 풀 (대표 미국 ETF)

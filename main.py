@@ -17,10 +17,13 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 import os
+import time
 
 # yfinance 는 선택적 의존성. 설치/네트워크 실패해도 앱은 폴백으로 동작해야 한다.
+# pandas 는 yfinance 가 의존하므로 같은 블록에서 가져온다(없으면 함께 폴백).
 try:
     import yfinance as yf
+    import pandas as pd
     _YF_OK = True
 except Exception:
     _YF_OK = False
@@ -78,8 +81,12 @@ ETF_POOL = [
 
 POOL_BY_TICKER = {e["ticker"]: e for e in ETF_POOL}
 
-# 간단한 메모리 캐시 (같은 세션에서 yfinance 반복 호출 방지)
+# 간단한 메모리 캐시 (티커 -> (저장시각, 결과)).
+# - 실시간(yfinance) 결과만 캐시한다. 폴백값은 캐시하지 않아
+#   네트워크가 복구되면 다음 호출에서 곧바로 실시간으로 전환된다.
+# - TTL 이 지나면 캐시를 무시하고 다시 받아 오래된 값을 보여주지 않는다.
 _METRIC_CACHE = {}
+_CACHE_TTL_SEC = 3600  # 1시간
 
 
 def _clamp(x, lo, hi):
@@ -94,8 +101,13 @@ def _clamp(x, lo, hi):
 # ---------------------------------------------------------------------------
 def fetch_metrics(ticker: str):
     base = POOL_BY_TICKER[ticker]
-    if ticker in _METRIC_CACHE:
-        return _METRIC_CACHE[ticker]
+
+    # 캐시에 신선한(TTL 이내) 실시간 데이터가 있으면 재사용
+    cached = _METRIC_CACHE.get(ticker)
+    if cached is not None:
+        ts, prev = cached
+        if time.time() - ts < _CACHE_TTL_SEC:
+            return prev
 
     if _YF_OK:
         try:
@@ -114,7 +126,7 @@ def fetch_metrics(ticker: str):
                 try:
                     divs = tk.dividends
                     if divs is not None and len(divs) > 0:
-                        last_year = divs[divs.index >= (closes.index[-1] - __import__("pandas").Timedelta(days=365))]
+                        last_year = divs[divs.index >= (closes.index[-1] - pd.Timedelta(days=365))]
                         if len(last_year) > 0 and price > 0:
                             div_yield = float(last_year.sum() / price * 100.0)
                 except Exception:
@@ -128,13 +140,13 @@ def fetch_metrics(ticker: str):
                     "price": round(price, 2),
                     "source": "yfinance",
                 }
-                _METRIC_CACHE[ticker] = result
+                _METRIC_CACHE[ticker] = (time.time(), result)  # 실시간 결과만 캐시
                 return result
         except Exception:
             pass
 
-    # ---- 폴백 ----
-    result = {
+    # ---- 폴백 ----  (캐시하지 않음: 다음 호출에서 실시간 재시도)
+    return {
         "ticker": ticker,
         "ret1y": base["ret1y"],
         "vol": base["vol"],
@@ -142,8 +154,6 @@ def fetch_metrics(ticker: str):
         "price": None,
         "source": "fallback",
     }
-    _METRIC_CACHE[ticker] = result
-    return result
 
 
 # ---------------------------------------------------------------------------

@@ -2,9 +2,9 @@
 # 사용:  docker compose up -d --build
 #
 # - ./data 폴더가 컨테이너의 /data 로 연결되어, 회원·즐겨찾기 DB가 NAS에 영구 저장됩니다.
-# - 비밀값(SECRET_KEY·ADMIN_PASSWORD)은 같은 폴더의 .env 파일에 적습니다(.env 는 깃에 안 올라감).
-#   .env.example 를 복사해 .env 로 만들고 값을 채우세요.
-# - ADMIN_USER 를 비우면(개방 모드) 로그인 없이 누구나 사용. 값을 넣으면 계정·승인제가 켜집니다.
+# - SECRET_KEY 는 같은 폴더의 .env 파일에 적습니다(.env 는 깃에 안 올라감).
+#   .env.example 를 복사해 .env 로 만들고 값을 채우세요. (안 채워도 /data 에 자동 생성·보관됨)
+# - 로그인은 항상 켜져 있고, '제일 먼저 가입한 사람'이 마스터(관리자)가 됩니다.
 # - 폰/PC에서  http://<NAS_IP>:8000  으로 접속.
 services:
   etf:

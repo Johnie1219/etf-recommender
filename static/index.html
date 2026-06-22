@@ -208,35 +208,32 @@
     <!-- 좌(모바일: 위) : 입력 -->
     <div>
       <div class="panel sticky">
+        <!-- 항상 보이는 추천 조건 (모든 탭에서 보임) -->
+        <div class="group">
+          <p class="label">위험 성향</p>
+          <div class="seg seg-3" id="riskSeg">
+            <button class="pill" data-v="conservative">안정형</button>
+            <button class="pill active" data-v="neutral">중립형</button>
+            <button class="pill" data-v="aggressive">공격형</button>
+          </div>
+        </div>
+
+        <div class="group">
+          <p class="label">투자 목표</p>
+          <div class="seg seg-3" id="goalSeg">
+            <button class="pill" data-v="growth">성장</button>
+            <button class="pill" data-v="dividend">배당</button>
+            <button class="pill active" data-v="diversified">분산</button>
+          </div>
+        </div>
+
         <div class="tabs" id="tabs">
-          <button class="tab active" data-tab="cond">추천 조건</button>
-          <button class="tab" data-tab="picks">종목</button>
+          <button class="tab active" data-tab="picks">종목</button>
           <button class="tab" data-tab="filter">필터</button>
         </div>
 
-        <!-- 탭 1: 추천 조건 -->
-        <div class="tabpanel active" data-panel="cond">
-          <div class="group">
-            <p class="label">위험 성향</p>
-            <div class="seg seg-3" id="riskSeg">
-              <button class="pill" data-v="conservative">안정형</button>
-              <button class="pill active" data-v="neutral">중립형</button>
-              <button class="pill" data-v="aggressive">공격형</button>
-            </div>
-          </div>
-
-          <div class="group">
-            <p class="label">투자 목표</p>
-            <div class="seg seg-3" id="goalSeg">
-              <button class="pill" data-v="growth">성장</button>
-              <button class="pill" data-v="dividend">배당</button>
-              <button class="pill active" data-v="diversified">분산</button>
-            </div>
-          </div>
-        </div>
-
-        <!-- 탭 2: 종목 -->
-        <div class="tabpanel" data-panel="picks">
+        <!-- 탭 1: 종목 -->
+        <div class="tabpanel active" data-panel="picks">
           <div class="group">
             <p class="label">테마 (빠른 선택)</p>
             <div class="seg seg-6" id="catSeg">
@@ -291,7 +288,7 @@
         </div>
 
         <button class="btn" id="runBtn">추천 받기</button>
-        <p class="hint">먼저 “추천 받기”를 누르세요. 이후에는 탭(추천 조건·종목·필터)에서 무엇을 바꿔도 결과가 실시간으로 갱신됩니다.</p>
+        <p class="hint">먼저 “추천 받기”를 누르세요. 이후에는 성향·목표·종목·필터에서 무엇을 바꿔도 결과가 실시간으로 갱신됩니다.</p>
       </div>
     </div>
 

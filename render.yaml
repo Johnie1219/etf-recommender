@@ -13,3 +13,6 @@ services:
       #  재배포 시 DB가 초기화될 수 있음 — 계정 저장이 중요하면 NAS 실행 권장.)
       - key: SECRET_KEY
         sync: false
+      # 마스터(관리자) 이메일. 이 이메일로 가입하면 자동 승인·관리자.
+      - key: ADMIN_EMAIL
+        sync: false

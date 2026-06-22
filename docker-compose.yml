@@ -16,4 +16,7 @@ services:
     environment:
       - DATA_DIR=/data
       - SECRET_KEY=여기에-아주-긴-무작위-문자열-넣기
+      # 마스터(관리자) 이메일. 이 이메일로 가입하면 자동 승인·관리자가 되고,
+      # 다른 사람이 가입하면 관리자가 승인해야 사용할 수 있습니다.
+      - ADMIN_EMAIL=내이메일@example.com
     restart: unless-stopped

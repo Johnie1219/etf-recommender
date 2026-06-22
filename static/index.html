@@ -237,6 +237,25 @@
     font-family: inherit; cursor: pointer; padding: 8px 0 0; }
   .details { margin-top: 8px; }
   .details .dscore { font-size: 12px; color: var(--sub); }
+
+  /* 벤치마킹: 1등 강조 카드 / 친근한 요약 / 정렬칩 / 기준시각 / 스켈레톤 */
+  .lead { font-size: 15px; line-height: 1.5; margin: 2px 0 12px; font-weight: 600; }
+  .lead b { color: var(--blue); }
+  .lead .leadsub { font-size: 11px; color: var(--sub); font-weight: 500; }
+  .sortbar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); margin-bottom: 12px; flex-wrap: wrap; }
+  .spill { border: 1px solid var(--line); background: #fff; color: var(--sub); border-radius: 999px;
+    padding: 6px 12px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .spill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .asof a { color: var(--blue); cursor: pointer; text-decoration: none; }
+  .herocard { border: 1.5px solid var(--blue); background: #f5f9ff; }
+  .herobadge { display: inline-block; background: var(--blue); color: #fff; font-size: 11px; font-weight: 700;
+    padding: 2px 8px; border-radius: 999px; margin-right: 6px; vertical-align: middle; }
+  .skel-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
+  .skel { background: linear-gradient(90deg,#ececef,#f6f6f8,#ececef); background-size: 200% 100%;
+    animation: sh 1.2s infinite; border-radius: 6px; }
+  .skel-line { height: 12px; margin: 9px 0; }
+  .w40 { width: 40%; } .w60 { width: 60%; } .w90 { width: 90%; }
+  @keyframes sh { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
   .metrics { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
   .metrics b { font-weight: 600; }
   .metrics .m span { color: var(--sub); margin-right: 5px; }
@@ -391,7 +410,7 @@
 
 <script>
 const API = '';
-const state = { risk: 'neutral', goal: 'dividend', dividends: 'all', minYield: '0', top: '0', ran: false };
+const state = { risk: 'neutral', goal: 'dividend', dividends: 'all', minYield: '0', top: '0', sort: 'score', ran: false };
 let chart = null;
 let poolList = [];  // 현재 종목 목록(티커·분류) — 테마 빠른 선택에 사용
 let favorites = new Set();  // 내 즐겨찾기 티커
@@ -657,6 +676,8 @@ async function toggleFav(ticker, btn) {
 document.getElementById('result').addEventListener('click', function (e) {
   const s = e.target.closest('.star');
   if (s) { toggleFav(s.dataset.ticker, s); return; }
+  const sp = e.target.closest('.spill');
+  if (sp) { state.sort = sp.dataset.sort; if (lastData) render(lastData); return; }
   const more = e.target.closest('.more');
   if (more) {
     const det = more.nextElementSibling;
@@ -691,7 +712,7 @@ async function run() {
     res.innerHTML = '<div class="empty">분석할 종목을 1개 이상 선택하세요.</div>';
     return;
   }
-  res.innerHTML = '<div class="empty">불러오는 중… <span style="font-size:12px;">(실시간 시세 조회, 최대 30초)</span></div>';
+  res.innerHTML = skeletonHtml();
 
   // 무배당만 선택 시 '최소 배당수익률'은 무시(서로 모순이라 결과가 비지 않게)
   const my = state.dividends === 'no' ? 0 : Number(state.minYield || 0);
@@ -761,7 +782,58 @@ function filterSummary(d) {
   return count + (parts.length ? ' · ' + parts.join(' · ') : '');
 }
 
+// 정렬 옵션 (ETF 스크리너 벤치마킹)
+const SORTS = {
+  score:  { label: '점수',   cmp: function (a, b) { return b.score - a.score; } },
+  ret:    { label: '수익률', cmp: function (a, b) { return b.ret1y - a.ret1y; } },
+  yield:  { label: '배당',   cmp: function (a, b) { return b.yield - a.yield; } },
+  stable: { label: '안정성', cmp: function (a, b) { return a.vol - b.vol; } }
+};
+function retClass(n) { return (n === null || n === undefined) ? '' : (n >= 0 ? 'up' : 'down'); }
+function hhmm(dt) { return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0'); }
+let lastData = null, lastFetchedAt = null;
+
+// 결과 카드 1장 (hero=1등 강조)
+function cardHtml(r, hero) {
+  const badge = hero ? '<span class="herobadge">🏆 1위</span> ' : '';
+  return '<div class="card' + (hero ? ' herocard' : '') + '">' +
+    '<div class="top">' +
+      '<div class="name">' + badge + r.ticker + ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
+      '<div style="display:flex;align-items:center;gap:10px;">' +
+        '<button class="star' + (favorites.has(r.ticker) ? ' on' : '') + '" data-ticker="' + r.ticker + '" title="즐겨찾기" aria-label="즐겨찾기">★</button>' +
+        '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
+      '</div>' +
+    '</div>' +
+    '<div class="pc"><div class="pro">👍 ' + r.pro + '</div><div class="con">⚠️ ' + r.con + '</div></div>' +
+    '<div class="metrics">' +
+      '<div class="m"><span>현재가</span><b>' + (r.price === null ? '—' : '$' + r.price) +
+        (r.price_krw !== null ? ' <span style="color:var(--sub);font-weight:500">(약 ' + won(r.price_krw) + ')</span>' : '') + '</b></div>' +
+      '<div class="m"><span>1년 수익률(달러)</span><b class="' + retClass(r.ret1y) + '">' + pct(r.ret1y) + '</b></div>' +
+      '<div class="m"><span>원화 환산 1년</span><b class="' + retClass(r.ret1y_krw) + '">' + pct(r.ret1y_krw) + '</b></div>' +
+      '<div class="m"><span>변동성</span><b>' + r.vol + '%</b></div>' +
+      '<div class="m"><span>배당수익률</span><b>' + r.yield + '%</b></div>' +
+    '</div>' +
+    '<button class="more" data-more>점수 근거 자세히 ▾</button>' +
+    '<div class="details" hidden>' +
+      '<div class="dscore">세부점수 — 수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + ' (각 0~100)</div>' +
+      '<div class="reason">' + r.reason + '</div>' +
+    '</div>' +
+    '<div class="links"><a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a></div>' +
+  '</div>';
+}
+
+function skeletonHtml() {
+  let s = '<div class="wbar" style="opacity:.7">시세 불러오는 중…</div>';
+  for (let i = 0; i < 4; i++) {
+    s += '<div class="skel-card"><div class="skel skel-line w60"></div>' +
+         '<div class="skel skel-line w90"></div><div class="skel skel-line w40"></div></div>';
+  }
+  return s;
+}
+
 function render(d) {
+  lastData = d;
+  lastFetchedAt = new Date();
   const w = d.weights;
   const header =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
@@ -769,7 +841,6 @@ function render(d) {
       srcBadge(d.source) +
     '</div>';
 
-  // 필터로 결과가 0개면 안내하고 끝
   if (!d.results.length) {
     document.getElementById('result').innerHTML = header +
       '<div class="empty">조건에 맞는 종목이 없습니다.<br/>배당 필터나 최소 배당수익률을 완화해 보세요.</div>';
@@ -777,51 +848,36 @@ function render(d) {
     return;
   }
 
-  const cards = d.results.map(function (r) {
-    return '<div class="card">' +
-      '<div class="top">' +
-        '<div class="name">' + r.ticker + ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
-        '<div style="display:flex;align-items:center;gap:10px;">' +
-          '<button class="star' + (favorites.has(r.ticker) ? ' on' : '') + '" data-ticker="' + r.ticker + '" title="즐겨찾기" aria-label="즐겨찾기">★</button>' +
-          '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
-        '</div>' +
-      '</div>' +
-      '<div class="pc">' +
-        '<div class="pro">👍 ' + r.pro + '</div>' +
-        '<div class="con">⚠️ ' + r.con + '</div>' +
-      '</div>' +
-      '<div class="metrics">' +
-        '<div class="m"><span>현재가</span><b>' + (r.price === null ? '—' : '$' + r.price) +
-          (r.price_krw !== null ? ' <span style="color:var(--sub);font-weight:500">(약 ' + won(r.price_krw) + ')</span>' : '') + '</b></div>' +
-        '<div class="m"><span>1년 수익률(달러)</span><b>' + pct(r.ret1y) + '</b></div>' +
-        '<div class="m"><span>원화 환산 1년</span><b>' + pct(r.ret1y_krw) + '</b></div>' +
-        '<div class="m"><span>변동성</span><b>' + r.vol + '%</b></div>' +
-        '<div class="m"><span>배당수익률</span><b>' + r.yield + '%</b></div>' +
-      '</div>' +
-      '<button class="more" data-more>점수 근거 자세히 ▾</button>' +
-      '<div class="details" hidden>' +
-        '<div class="dscore">세부점수 — 수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + ' (각 0~100)</div>' +
-        '<div class="reason">' + r.reason + '</div>' +
-      '</div>' +
-      '<div class="links">' +
-        '<a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a>' +
-      '</div>' +
-    '</div>';
-  }).join('');
+  const sortKey = SORTS[state.sort] ? state.sort : 'score';
+  const sorted = d.results.slice().sort(SORTS[sortKey].cmp);
+  const hero = sorted[0], rest = sorted.slice(1);
+
+  const lead = '<div class="lead">' + CAT_LABEL[d.goal] + '·' + RISK_LABEL[d.risk] + ' 기준, ' +
+    '<b>' + hero.ticker + '</b>(' + hero.name + ')가 ' + SORTS[sortKey].label + ' 1위예요. ' +
+    '<span class="leadsub">참고용이에요</span></div>';
+
+  const sortbar = '<div class="sortbar">정렬 ' + Object.keys(SORTS).map(function (k) {
+    return '<button class="spill' + (k === sortKey ? ' active' : '') + '" data-sort="' + k + '">' + SORTS[k].label + '</button>';
+  }).join('') + '</div>';
+
+  const asof = '<div class="wbar asof">' + hhmm(lastFetchedAt) + ' 기준 · <a id="refreshBtn">새로고침</a> · ' + fxLine(d.fx) + '</div>';
 
   document.getElementById('result').innerHTML =
-    header +
+    header + lead +
     '<div class="wbar">' + filterSummary(d) + '</div>' +
-    '<div class="wbar">' + fxLine(d.fx) + '</div>' +
+    asof +
     '<div class="wbar">점수 가중치 — 수익성 ' + (w.R * 100).toFixed(0) + '% · 배당 ' + (w.D * 100).toFixed(0) +
       '% · 안정성 ' + (w.S * 100).toFixed(0) + '% (목표·성향에 따라 자동 조정, 점수는 달러 기준)</div>' +
-    '<div class="chartbox"><canvas id="chart" height="' + Math.max(140, d.results.length * 30) + '"></canvas></div>' +
-    cards +
+    sortbar +
+    '<div class="chartbox"><canvas id="chart" height="' + Math.max(140, sorted.length * 30) + '"></canvas></div>' +
+    cardHtml(hero, true) + rest.map(function (r) { return cardHtml(r, false); }).join('') +
     '<p class="disc">' + d.disclaimer + '<br/>' +
       '점수 = 수익성×' + w.R + ' + 배당×' + w.D + ' + 안정성×' + w.S +
       '. 세부점수는 수익성=(1년수익률+10)/50, 배당=배당수익률/5, 안정성=(35−변동성)/35 를 0~100으로 환산한 값(화면 설명과 계산식 동일).</p>';
 
-  drawChart(d.results);
+  drawChart(sorted);
+  const rb = document.getElementById('refreshBtn');
+  if (rb) rb.onclick = run;
 }
 
 function drawChart(rows) {

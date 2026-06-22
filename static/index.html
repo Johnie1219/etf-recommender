@@ -74,6 +74,7 @@
     #banner { margin: 8px 16px 0; }
     .panel { padding: 18px 16px; border-radius: 14px; }
     .pill { padding: 11px 18px; font-size: 15px; }
+    .tab { padding: 13px 6px; font-size: 15px; }
     .checks { grid-template-columns: 1fr 1fr; gap: 12px 14px; }
     .chk { padding: 4px 0; font-size: 14px; }
     .chk input { width: 20px; height: 20px; }
@@ -93,6 +94,20 @@
 
   .label { font-size: 13px; font-weight: 600; color: var(--sub); margin: 0 0 10px; }
   .group { margin-bottom: 22px; }
+  .group:last-child { margin-bottom: 0; }
+
+  /* 입력 패널 탭 (항목별 분리로 페이지 길이 단축) */
+  .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
+  .tab {
+    flex: 1; text-align: center; padding: 10px 6px;
+    font-size: 14px; font-weight: 600; color: var(--sub);
+    background: none; border: none; border-bottom: 2px solid transparent;
+    cursor: pointer; font-family: inherit; transition: color .15s ease;
+  }
+  .tab:hover { color: var(--ink); }
+  .tab.active { color: var(--blue); border-bottom-color: var(--blue); }
+  .tabpanel { display: none; }
+  .tabpanel.active { display: block; }
 
   .seg { display: flex; gap: 8px; flex-wrap: wrap; }
   .pill {
@@ -177,75 +192,90 @@
     <!-- 좌(모바일: 위) : 입력 -->
     <div>
       <div class="panel sticky">
-        <div class="group">
-          <p class="label">위험 성향</p>
-          <div class="seg" id="riskSeg">
-            <button class="pill" data-v="conservative">안정형</button>
-            <button class="pill active" data-v="neutral">중립형</button>
-            <button class="pill" data-v="aggressive">공격형</button>
+        <div class="tabs" id="tabs">
+          <button class="tab active" data-tab="cond">추천 조건</button>
+          <button class="tab" data-tab="picks">종목</button>
+          <button class="tab" data-tab="filter">필터</button>
+        </div>
+
+        <!-- 탭 1: 추천 조건 -->
+        <div class="tabpanel active" data-panel="cond">
+          <div class="group">
+            <p class="label">위험 성향</p>
+            <div class="seg" id="riskSeg">
+              <button class="pill" data-v="conservative">안정형</button>
+              <button class="pill active" data-v="neutral">중립형</button>
+              <button class="pill" data-v="aggressive">공격형</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <p class="label">투자 목표</p>
+            <div class="seg" id="goalSeg">
+              <button class="pill" data-v="growth">성장</button>
+              <button class="pill" data-v="dividend">배당</button>
+              <button class="pill active" data-v="diversified">분산</button>
+            </div>
           </div>
         </div>
 
-        <div class="group">
-          <p class="label">투자 목표</p>
-          <div class="seg" id="goalSeg">
-            <button class="pill" data-v="growth">성장</button>
-            <button class="pill" data-v="dividend">배당</button>
-            <button class="pill active" data-v="diversified">분산</button>
+        <!-- 탭 2: 종목 -->
+        <div class="tabpanel" data-panel="picks">
+          <div class="group">
+            <p class="label">테마 (빠른 선택)</p>
+            <div class="seg" id="catSeg">
+              <button class="pill active" data-cat="전체">전체</button>
+              <button class="pill" data-cat="성장">성장</button>
+              <button class="pill" data-cat="배당">배당</button>
+              <button class="pill" data-cat="채권">채권</button>
+              <button class="pill" data-cat="분산">분산</button>
+              <button class="pill" data-cat="섹터">섹터</button>
+            </div>
+          </div>
+
+          <div class="group">
+            <p class="label">분석할 종목</p>
+            <div class="selrow">
+              <a id="selAll">전체 선택</a>
+              <a id="selNone">전체 해제</a>
+            </div>
+            <div class="checks" id="checks"></div>
           </div>
         </div>
 
-        <div class="group">
-          <p class="label">테마 (빠른 선택)</p>
-          <div class="seg" id="catSeg">
-            <button class="pill active" data-cat="전체">전체</button>
-            <button class="pill" data-cat="성장">성장</button>
-            <button class="pill" data-cat="배당">배당</button>
-            <button class="pill" data-cat="채권">채권</button>
-            <button class="pill" data-cat="분산">분산</button>
-            <button class="pill" data-cat="섹터">섹터</button>
+        <!-- 탭 3: 필터 -->
+        <div class="tabpanel" data-panel="filter">
+          <div class="group">
+            <p class="label">배당 여부</p>
+            <div class="seg" id="divSeg">
+              <button class="pill active" data-v="all">전체</button>
+              <button class="pill" data-v="yes">배당 주는 것만</button>
+              <button class="pill" data-v="no">무배당만</button>
+            </div>
           </div>
-        </div>
 
-        <div class="group">
-          <p class="label">분석할 종목</p>
-          <div class="selrow">
-            <a id="selAll">전체 선택</a>
-            <a id="selNone">전체 해제</a>
+          <div class="group" id="minYieldGroup">
+            <p class="label">최소 배당수익률</p>
+            <div class="seg" id="minYieldSeg">
+              <button class="pill active" data-v="0">제한 없음</button>
+              <button class="pill" data-v="2">2%+</button>
+              <button class="pill" data-v="3">3%+</button>
+              <button class="pill" data-v="4">4%+</button>
+            </div>
           </div>
-          <div class="checks" id="checks"></div>
-        </div>
 
-        <div class="group">
-          <p class="label">배당 여부</p>
-          <div class="seg" id="divSeg">
-            <button class="pill active" data-v="all">전체</button>
-            <button class="pill" data-v="yes">배당 주는 것만</button>
-            <button class="pill" data-v="no">무배당만</button>
-          </div>
-        </div>
-
-        <div class="group" id="minYieldGroup">
-          <p class="label">최소 배당수익률</p>
-          <div class="seg" id="minYieldSeg">
-            <button class="pill active" data-v="0">제한 없음</button>
-            <button class="pill" data-v="2">2%+</button>
-            <button class="pill" data-v="3">3%+</button>
-            <button class="pill" data-v="4">4%+</button>
-          </div>
-        </div>
-
-        <div class="group">
-          <p class="label">표시 개수</p>
-          <div class="seg" id="topSeg">
-            <button class="pill" data-v="5">Top 5</button>
-            <button class="pill" data-v="10">Top 10</button>
-            <button class="pill active" data-v="0">전체</button>
+          <div class="group">
+            <p class="label">표시 개수</p>
+            <div class="seg" id="topSeg">
+              <button class="pill" data-v="5">Top 5</button>
+              <button class="pill" data-v="10">Top 10</button>
+              <button class="pill active" data-v="0">전체</button>
+            </div>
           </div>
         </div>
 
         <button class="btn" id="runBtn">추천 받기</button>
-        <p class="hint">먼저 “추천 받기”를 누르세요. 이후에는 성향·목표·종목·필터를 바꾸면 결과가 실시간으로 갱신됩니다.</p>
+        <p class="hint">먼저 “추천 받기”를 누르세요. 이후에는 탭(추천 조건·종목·필터)에서 무엇을 바꿔도 결과가 실시간으로 갱신됩니다.</p>
       </div>
     </div>
 
@@ -295,6 +325,18 @@ function bindSeg(id, key) {
     if (state.ran) run(); // 첫 실행 이후에만 실시간 갱신
   });
 }
+// --- 입력 패널 탭 전환 (설정은 그대로 유지, 보여주는 항목만 바뀜) ---
+document.getElementById('tabs').addEventListener('click', function (e) {
+  const b = e.target.closest('.tab');
+  if (!b) return;
+  this.querySelectorAll('.tab').forEach(function (t) { t.classList.remove('active'); });
+  b.classList.add('active');
+  const name = b.dataset.tab;
+  document.querySelectorAll('.tabpanel').forEach(function (p) {
+    p.classList.toggle('active', p.dataset.panel === name);
+  });
+});
+
 bindSeg('riskSeg', 'risk');
 bindSeg('goalSeg', 'goal');
 bindSeg('divSeg', 'dividends');

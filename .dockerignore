@@ -1,0 +1,7 @@
+data/
+__pycache__/
+*.pyc
+.git/
+.gitignore
+*.log
+작업노트.md

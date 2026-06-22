@@ -8,7 +8,8 @@ services:
     buildCommand: pip install -r requirements.txt
     startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
     envVars:
-      # 접속 비밀번호. sync:false 라서 깃에 저장되지 않고
-      # Render 대시보드에서 직접 입력한다. 비워두면 로그인 없이 공개된다.
-      - key: APP_PASSWORD
+      # 로그인 세션 서명키. sync:false 라서 깃에 저장되지 않고 대시보드에서 입력.
+      # (계정·즐겨찾기는 회원가입 방식. 단, Render 무료는 영구 디스크가 없어
+      #  재배포 시 DB가 초기화될 수 있음 — 계정 저장이 중요하면 NAS 실행 권장.)
+      - key: SECRET_KEY
         sync: false

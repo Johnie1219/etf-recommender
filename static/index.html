@@ -115,6 +115,34 @@
   .label { font-size: 13px; font-weight: 600; color: var(--sub); margin: 0 0 10px; }
   .group { margin-bottom: 22px; }
 
+  /* 고위험(레버리지·인버스) — 점수·추천 대상 아님. 접힌 채로 두고 직접 펼칠 때만 표시 */
+  .hr-panel { margin-top: 16px; padding: 0; overflow: hidden; }
+  .hr-toggle {
+    width: 100%; display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; padding: 16px 20px; background: none; border: none; cursor: pointer;
+    font-family: inherit; font-size: 15px; font-weight: 600; color: var(--ink);
+  }
+  .hr-chev { color: var(--sub); transition: transform .15s ease; }
+  .hr-toggle[aria-expanded="true"] .hr-chev { transform: rotate(180deg); }
+  .hr-body { padding: 0 20px 20px; }
+  .hr-warn {
+    border: 1px solid #c0392b; border-radius: 12px; padding: 12px 14px; margin-bottom: 14px;
+    font-size: 12.5px; line-height: 1.6; color: var(--ink); background: var(--card);
+  }
+  .hr-card {
+    border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin-bottom: 10px;
+  }
+  .hr-card h4 { margin: 0 0 2px; font-size: 15px; font-weight: 600; }
+  .hr-card .hr-sub { font-size: 12px; color: var(--sub); margin-bottom: 8px; }
+  .hr-badge {
+    display: inline-block; font-size: 11px; font-weight: 600; color: #c0392b;
+    border: 1px solid #c0392b; border-radius: 999px; padding: 1px 8px; margin-left: 6px; vertical-align: middle;
+  }
+  .hr-stats { display: flex; flex-wrap: wrap; gap: 6px 14px; font-size: 12.5px; color: var(--sub); margin-bottom: 8px; }
+  .hr-stats b { color: var(--ink); font-weight: 600; }
+  .hr-note { font-size: 12.5px; line-height: 1.55; color: var(--ink); margin-bottom: 8px; }
+  .hr-card a.hr-link { font-size: 12.5px; color: var(--blue); text-decoration: none; font-weight: 600; }
+
   /* 입력 패널 탭 (항목별 분리로 페이지 길이 단축) */
   .tabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 22px; }
   .tab {
@@ -545,6 +573,16 @@
     <!-- 결과 (아래) -->
     <div class="panel">
       <div id="result">
+        <div class="empty">불러오는 중…</div>
+      </div>
+    </div>
+
+    <div class="panel hr-panel">
+      <button id="hrToggle" class="hr-toggle" aria-expanded="false" aria-controls="hrBody">
+        <span>⚠️ 고위험 (레버리지·인버스)</span>
+        <span class="hr-chev" aria-hidden="true">▾</span>
+      </button>
+      <div id="hrBody" class="hr-body" hidden>
         <div class="empty">불러오는 중…</div>
       </div>
     </div>
@@ -1224,6 +1262,53 @@ document.getElementById('eduBtn').addEventListener('click', openEdu);
     box.hidden = true; try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
   });
 })();
+
+// --- 고위험(레버리지·인버스): 접힌 채로 두고, 펼칠 때 한 번만 불러온다 ---
+(function () {
+  const btn = document.getElementById('hrToggle');
+  const body = document.getElementById('hrBody');
+  let loaded = false;
+  btn.addEventListener('click', function () {
+    const open = btn.getAttribute('aria-expanded') === 'true';
+    btn.setAttribute('aria-expanded', open ? 'false' : 'true');
+    body.hidden = open;
+    if (!open && !loaded) { loaded = true; loadHighRisk(); }
+  });
+})();
+
+function loadHighRisk() {
+  const body = document.getElementById('hrBody');
+  fetch(API + '/api/high-risk').then(function (r) { return r.json(); })
+    .then(renderHighRisk)
+    .catch(function () {
+      body.innerHTML = '<div class="empty">고위험 목록을 불러오지 못했습니다. 잠시 후 다시 시도해 주세요.</div>';
+    });
+}
+
+function renderHighRisk(d) {
+  const body = document.getElementById('hrBody');
+  const rows = (d && d.results) || [];
+  let html = '<div class="hr-warn">' + d.warning + '</div>';
+  html += '<div class="hint" style="margin:0 0 10px;">' + srcBadge(d.source) + ' · 아래 수치는 과거·참고용이며 미래를 예측하지 않습니다. 추천 점수는 매기지 않습니다.</div>';
+  rows.forEach(function (r) {
+    const krw = (r.price_krw === null || r.price_krw === undefined) ? '' : ' (약 ' + won(r.price_krw) + ')';
+    const price = (r.price === null || r.price === undefined) ? '실시간 가격 없음' : ('$' + r.price + krw);
+    html +=
+      '<div class="hr-card">' +
+        '<h4>' + r.ticker + ' <span class="hr-badge">' + r.mult + '</span></h4>' +
+        '<div class="hr-sub">' + r.name + ' · 기초지수 ' + r.base + '</div>' +
+        '<div class="hr-stats">' +
+          '<span>최근 1년 <b>' + pct(r.ret1y) + '</b></span>' +
+          '<span>변동성 <b>' + pct(r.vol) + '</b></span>' +
+          '<span>배당 <b>' + pct(r.yield) + '</b></span>' +
+          '<span>현재가 <b>' + price + '</b></span>' +
+        '</div>' +
+        '<div class="hr-note">' + r.note + '</div>' +
+        '<a class="hr-link" href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a>' +
+      '</div>';
+  });
+  body.innerHTML = html;
+}
 // 맨 위로
 (function () {
   const fab = document.getElementById('scrollTop');

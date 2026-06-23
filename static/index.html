@@ -344,7 +344,7 @@
   .metrics { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
   .metrics b { font-weight: 600; }
   .metrics .m span { color: var(--sub); margin-right: 5px; }
-  .card .links { margin-top: 12px; }
+  .card .links { margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
   .card .links a { font-size: 12px; color: var(--blue); text-decoration: none; }
 
   .disc { font-size: 11px; color: var(--sub); margin-top: 18px; line-height: 1.6; }
@@ -902,6 +902,8 @@ document.getElementById('result').addEventListener('click', function (e) {
   if (cr) { selectCategory(cr.dataset.cat); return; }
   const sp = e.target.closest('.spill');
   if (sp) { state.sort = sp.dataset.sort; if (lastData) render(lastData); return; }
+  const rt = e.target.closest('[data-rec-trade]');
+  if (rt) { prefillTrade(rt.dataset.recTrade); return; }
   const more = e.target.closest('.more');
   if (more) {
     const det = more.nextElementSibling;
@@ -910,6 +912,22 @@ document.getElementById('result').addEventListener('click', function (e) {
     else { det.setAttribute('hidden', ''); more.textContent = '점수 근거 자세히 ▾'; }
   }
 });
+
+// 결과 카드의 '기록하기' → 실거래 탭으로 이동하며 그 종목을 미리 채움(매수 기본)
+function prefillTrade(ticker) {
+  document.querySelectorAll('#tabs .tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === 'trade'); });
+  document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.toggle('active', p.dataset.panel === 'trade'); });
+  tradeType = 'buy';
+  const seg = document.getElementById('tradeTypeSeg');
+  seg.querySelectorAll('.pill').forEach(function (p) { p.classList.toggle('active', p.dataset.v === 'buy'); });
+  document.getElementById('tPrice').placeholder = '단가($)';
+  const sel = document.getElementById('tTicker');
+  if ([].some.call(sel.options, function (o) { return o.value === ticker; })) sel.value = ticker;
+  const dt = document.getElementById('tDate'); if (!dt.value) dt.value = new Date().toISOString().slice(0, 10);
+  document.getElementById('tradePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(function () { document.getElementById('tQty').focus(); }, 300);
+  toast(ticker + ' 기록 준비 — 수량·단가만 넣으세요');
+}
 
 // 종목을 손으로 바꾸면 '테마' 빠른선택 강조는 헷갈리니 해제(전체일 때만 유지)
 document.getElementById('checks').addEventListener('change', function () { setCatActive(null); if (state.ran) run(); });
@@ -1194,7 +1212,8 @@ function cardHtml(r, hero, rank) {
       '<div class="dscore">세부점수 — 수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + ' (각 0~100)</div>' +
       '<div class="reason">' + r.reason + '</div>' +
     '</div>' +
-    '<div class="links"><a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a></div>' +
+    '<div class="links"><a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a>' +
+      '<a data-rec-trade="' + r.ticker + '" style="cursor:pointer;">📝 기록하기</a></div>' +
   '</div>';
 }
 

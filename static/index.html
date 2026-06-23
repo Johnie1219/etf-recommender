@@ -77,6 +77,18 @@
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
   }
 
+  .intro {
+    max-width: 460px; margin: 8px auto 0; padding: 10px 14px;
+    background: var(--hero); border: 1px solid var(--line); border-radius: 12px;
+    font-size: 13px; color: var(--ink); line-height: 1.5;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .intro b { font-weight: 600; }
+  .introx {
+    margin-left: auto; flex-shrink: 0; background: none; border: none; cursor: pointer;
+    font-size: 20px; line-height: 1; color: var(--sub); font-family: inherit; padding: 0 2px;
+  }
+
   .layout {
     max-width: 460px;
     margin: 0 auto;
@@ -140,6 +152,7 @@
   }
   .pill:hover { border-color: #c7c7cc; }
   .pill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .pill.ghost { padding: 8px 14px; font-size: 13px; color: var(--sub); }
 
   /* 로그인 사용자 표시 / 로그아웃 */
   .hrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -301,10 +314,14 @@
   .spill { border: 1px solid var(--line); background: var(--card); color: var(--sub); border-radius: 999px;
     padding: 6px 12px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
   .spill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .quickstart { display: flex; gap: 8px; overflow-x: auto; padding-bottom: 4px; -webkit-overflow-scrolling: touch; }
+  .quickstart .spill { white-space: nowrap; flex-shrink: 0; }
   .asof a { color: var(--blue); cursor: pointer; text-decoration: none; }
   .herocard { border: 1.5px solid var(--blue); background: var(--hero); }
   .herobadge { display: inline-block; background: var(--blue); color: #fff; font-size: 11px; font-weight: 700;
     padding: 2px 8px; border-radius: 999px; margin-right: 6px; vertical-align: middle; }
+  .heldbadge { display: inline-block; border: 1px solid var(--blue); color: var(--blue); font-size: 11px; font-weight: 600;
+    padding: 1px 7px; border-radius: 999px; vertical-align: middle; }
   /* 순위 번호 (토스 랭킹 리스트) */
   .rank { display: inline-block; min-width: 18px; color: var(--blue); font-weight: 700; font-size: 15px; margin-right: 6px; }
   /* 테마 순위 (토스 '지금 뜨고 있는 카테고리') */
@@ -341,7 +358,7 @@
   .metrics { display: flex; flex-wrap: wrap; gap: 18px; font-size: 13px; }
   .metrics b { font-weight: 600; }
   .metrics .m span { color: var(--sub); margin-right: 5px; }
-  .card .links { margin-top: 12px; }
+  .card .links { margin-top: 12px; display: flex; gap: 16px; flex-wrap: wrap; }
   .card .links a { font-size: 12px; color: var(--blue); text-decoration: none; }
 
   .disc { font-size: 11px; color: var(--sub); margin-top: 18px; line-height: 1.6; }
@@ -365,6 +382,10 @@
   </header>
 
   <div id="banner" style="display:none;"></div>
+  <div id="intro" class="intro" hidden>
+    <span>처음이세요? 위의 <b>⚡ 빠른 시작</b>으로 한 번에 맞추거나, <b>📚</b>에서 ETF 기초를 볼 수 있어요. 교육·참고용이에요.</span>
+    <button id="introClose" class="introx" aria-label="닫기">×</button>
+  </div>
   <div id="toast" class="toast"></div>
   <button id="scrollTop" class="fab" hidden title="맨 위로" aria-label="맨 위로">↑</button>
   <div id="compareBar" class="cmpbar" hidden></div>
@@ -374,6 +395,16 @@
     <div>
       <div class="panel">
         <!-- 항상 보이는 추천 조건 (모든 탭에서 보임) -->
+        <div class="group">
+          <p class="label">빠른 시작 <span style="color:var(--sub);font-weight:400;">— 한 번에 성향·목표·필터를 맞춰요</span></p>
+          <div class="quickstart" id="quickStart">
+            <button type="button" class="spill" data-qs="safe-div">🛡️ 안정적 배당</button>
+            <button type="button" class="spill" data-qs="steady">🌱 꾸준한 성장</button>
+            <button type="button" class="spill" data-qs="aggressive">🚀 공격 성장</button>
+            <button type="button" class="spill" data-qs="balanced">⚖️ 안정 분산</button>
+          </div>
+        </div>
+
         <div class="group">
           <p class="label">위험 성향</p>
           <div class="seg seg-3" id="riskSeg">
@@ -482,6 +513,13 @@
           <details id="tradeListWrap" style="margin-top:10px;" hidden>
             <summary style="font-size:13px;color:var(--blue);cursor:pointer;">거래 내역 보기</summary>
             <div id="tradeList"></div>
+            <div id="tradeBackup" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+              <button type="button" class="pill ghost" id="tExport">CSV 내보내기</button>
+              <button type="button" class="pill ghost" id="tBackup">백업(.json)</button>
+              <button type="button" class="pill ghost" id="tRestoreBtn">복원</button>
+              <input type="file" id="tRestore" accept="application/json,.json" hidden />
+            </div>
+            <p class="hint" style="margin-top:6px;">거래 기록은 이 기기(브라우저)에만 저장돼요. 기기를 바꾸거나 캐시를 지우면 사라지니 가끔 백업해 두세요.</p>
           </details>
         </div>
 
@@ -573,6 +611,7 @@ function bindSeg(id, key) {
     seg.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
     b.classList.add('active');
     state[key] = b.dataset.v;
+    clearQuickStart(); // 직접 바꾸면 빠른 시작 강조 해제(혼동 방지)
     if (state.ran) run(); // 첫 실행 이후에만 실시간 갱신
   });
 }
@@ -593,6 +632,38 @@ bindSeg('goalSeg', 'goal');
 bindSeg('divSeg', 'dividends');
 bindSeg('minYieldSeg', 'minYield');
 bindSeg('topSeg', 'top');
+
+// 빠른 시작: 한 번에 성향·목표·배당필터·최소배당을 맞춰줌(초보자 편의). 종목은 전체 선택 유지.
+const QUICKSTART = {
+  'safe-div':   { risk: 'conservative', goal: 'dividend',    dividends: 'yes', minYield: '3', top: '0' },
+  'steady':     { risk: 'neutral',      goal: 'growth',      dividends: 'all', minYield: '0', top: '0' },
+  'aggressive': { risk: 'aggressive',   goal: 'growth',      dividends: 'all', minYield: '0', top: '0' },
+  'balanced':   { risk: 'conservative', goal: 'diversified', dividends: 'all', minYield: '0', top: '0' }
+};
+function clearQuickStart() {
+  const qs = document.getElementById('quickStart');
+  if (qs) qs.querySelectorAll('.spill').forEach(function (p) { p.classList.remove('active'); });
+}
+document.getElementById('quickStart').addEventListener('click', function (e) {
+  const b = e.target.closest('[data-qs]'); if (!b) return;
+  const preset = QUICKSTART[b.dataset.qs]; if (!preset) return;
+  setSeg('riskSeg', 'risk', preset.risk);
+  setSeg('goalSeg', 'goal', preset.goal);
+  setSeg('divSeg', 'dividends', preset.dividends);
+  setSeg('minYieldSeg', 'minYield', preset.minYield);
+  setSeg('topSeg', 'top', preset.top);
+  // 최소배당 비활성 동기화: 무배당만일 때만 흐리게(preset 기준으로 정확히)
+  const off = preset.dividends === 'no';
+  const g = document.getElementById('minYieldGroup');
+  g.style.opacity = off ? '0.4' : ''; g.style.pointerEvents = off ? 'none' : '';
+  // 빠른 시작은 시나리오라 종목을 '전체 선택'으로 되돌려 결과가 예측 가능하게 함
+  favOnly = false;
+  document.querySelectorAll('#checks input').forEach(function (c) { c.checked = true; });
+  setCatActive('전체'); updateFavBtn();
+  document.getElementById('quickStart').querySelectorAll('.spill').forEach(function (p) { p.classList.toggle('active', p === b); });
+  if (state.ran) run();
+  toast(b.textContent.trim() + ' 적용');
+});
 
 // 무배당만 선택 시 '최소 배당수익률'은 의미가 없으므로 비활성화(흐리게).
 document.getElementById('divSeg').addEventListener('click', function () {
@@ -852,8 +923,18 @@ document.getElementById('result').addEventListener('click', function (e) {
   if (cb) { toggleCompare(cb.dataset.cmp); return; }
   const cr = e.target.closest('.catrow');
   if (cr) { selectCategory(cr.dataset.cat); return; }
+  const rf = e.target.closest('[data-reset-filters]');
+  if (rf) {
+    setSeg('divSeg', 'dividends', 'all'); setSeg('minYieldSeg', 'minYield', '0'); setSeg('topSeg', 'top', '0');
+    const g = document.getElementById('minYieldGroup'); g.style.opacity = ''; g.style.pointerEvents = '';
+    if (state.ran) run(); toast('필터를 초기화했어요'); return;
+  }
+  const ex = e.target.closest('[data-export-csv]');
+  if (ex) { exportResultsCsv(); return; }
   const sp = e.target.closest('.spill');
-  if (sp) { state.sort = sp.dataset.sort; if (lastData) render(lastData); return; }
+  if (sp) { state.sort = sp.dataset.sort; savePrefs(); if (lastData) render(lastData); return; }
+  const rt = e.target.closest('[data-rec-trade]');
+  if (rt) { prefillTrade(rt.dataset.recTrade); return; }
   const more = e.target.closest('.more');
   if (more) {
     const det = more.nextElementSibling;
@@ -862,6 +943,38 @@ document.getElementById('result').addEventListener('click', function (e) {
     else { det.setAttribute('hidden', ''); more.textContent = '점수 근거 자세히 ▾'; }
   }
 });
+
+// 결과 카드의 '기록하기' → 실거래 탭으로 이동하며 그 종목을 미리 채움(매수 기본)
+function prefillTrade(ticker) {
+  document.querySelectorAll('#tabs .tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === 'trade'); });
+  document.querySelectorAll('.tabpanel').forEach(function (p) { p.classList.toggle('active', p.dataset.panel === 'trade'); });
+  tradeType = 'buy';
+  const seg = document.getElementById('tradeTypeSeg');
+  seg.querySelectorAll('.pill').forEach(function (p) { p.classList.toggle('active', p.dataset.v === 'buy'); });
+  document.getElementById('tPrice').placeholder = '단가($)';
+  const sel = document.getElementById('tTicker');
+  if ([].some.call(sel.options, function (o) { return o.value === ticker; })) sel.value = ticker;
+  const dt = document.getElementById('tDate'); if (!dt.value) dt.value = new Date().toISOString().slice(0, 10);
+  document.getElementById('tradePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
+  setTimeout(function () { document.getElementById('tQty').focus(); }, 300);
+  toast(ticker + ' 기록 준비 — 수량·단가만 넣으세요');
+}
+
+// 현재 추천 결과를 화면에 보이는 순서대로 CSV로 내려받기(표시된 숫자 그대로, 참고용)
+function exportResultsCsv() {
+  if (!lastData || !lastData.results || !lastData.results.length) { toast('내보낼 결과가 없어요'); return; }
+  const sk = SORTS[state.sort] ? state.sort : 'score';
+  const rows = lastData.results.slice().sort(SORTS[sk].cmp);
+  const esc = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const head = ['순위', '티커', '이름', '분류', '점수', '1년수익률(달러,%)', '원화환산1년(%)', '변동성(%)', '배당수익률(%)', '현재가(USD)', '현재가(원)'];
+  const lines = [head];
+  rows.forEach(function (r, i) {
+    lines.push([i + 1, r.ticker, r.name, r.cat, r.score, r.ret1y, r.ret1y_krw == null ? '' : r.ret1y_krw, r.vol, r.yield, r.price == null ? '' : r.price, r.price_krw == null ? '' : Math.round(r.price_krw)]);
+  });
+  const csv = '﻿' + lines.map(function (r) { return r.map(esc).join(','); }).join('\r\n');
+  downloadBlob('ETF추천_' + CAT_LABEL[lastData.goal] + '_' + RISK_LABEL[lastData.risk] + '_' + todayTag() + '.csv', csv, 'text/csv;charset=utf-8;');
+  toast('CSV로 내보냈어요 (' + rows.length + '개, 세금·수수료 미반영)');
+}
 
 // 종목을 손으로 바꾸면 '테마' 빠른선택 강조는 헷갈리니 해제(전체일 때만 유지)
 document.getElementById('checks').addEventListener('change', function () { setCatActive(null); if (state.ran) run(); });
@@ -903,8 +1016,21 @@ function updateSelCount() {
 }
 
 // --- 추천 실행 ---
+// 마지막으로 쓴 성향·목표·필터를 기억(종목 선택은 '전체 선택' 기본 유지를 위해 저장하지 않음)
+const PREF_KEY = 'etf_prefs';
+function savePrefs() {
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify({
+      risk: state.risk, goal: state.goal, dividends: state.dividends,
+      minYield: state.minYield, top: state.top, sort: state.sort
+    }));
+  } catch (e) {}
+}
+function loadPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); } catch (e) { return null; } }
+
 async function run() {
   updateSelCount();
+  savePrefs();
   const tickers = selectedTickers();
   const res = document.getElementById('result');
   if (tickers.length === 0) {
@@ -992,6 +1118,20 @@ function retClass(n) { return (n === null || n === undefined) ? '' : (n >= 0 ? '
 function hhmm(dt) { return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0'); }
 let lastData = null, lastFetchedAt = null;
 let compareSet = [];  // 비교할 티커(최대 3)
+let heldTickers = new Set();  // 실거래 기준 현재 보유 중인 티커
+
+// 실거래(평균단가법) 기준 현재 보유 중(수량>0)인 티커 집합
+function heldTickerSet() {
+  const ord = loadTrades().slice().sort(function (a, b) { return ((a.date || '') + a.id) < ((b.date || '') + b.id) ? -1 : 1; });
+  const agg = {};
+  ord.forEach(function (t) {
+    const a = agg[t.ticker] || (agg[t.ticker] = { qty: 0 });
+    a.qty += (t.type || 'buy') === 'sell' ? -Math.min(t.qty, a.qty) : t.qty;
+  });
+  const s = new Set();
+  Object.keys(agg).forEach(function (k) { if (agg[k].qty > 1e-7) s.add(k); });
+  return s;
+}
 
 // S&P500(VOO) 대비 1년 수익률 차이
 function benchLine(r) {
@@ -1063,7 +1203,7 @@ document.getElementById('helpBtn').addEventListener('click', openHelp);
 // ETF 기초 알아보기 — 처음 보는 사람도 이해할 수 있게. 모두 교육·참고용.
 function openEdu() {
   openSheet('ETF 기초 알아보기', '<div class="helpsheet">' +
-    '<p style="color:var(--mut);">아래는 교육·참고용 설명이에요. 특정 종목 매수·매도 권유가 아니며, 모든 투자에는 원금 손실 위험이 있어요.</p>' +
+    '<p style="color:var(--sub);">아래는 교육·참고용 설명이에요. 특정 종목 매수·매도 권유가 아니며, 모든 투자에는 원금 손실 위험이 있어요.</p>' +
     '<h3>ETF가 뭔가요?</h3><p>여러 주식·채권을 한 바구니에 담아 거래소에서 주식처럼 사고파는 상품이에요. 한 종목만 사도 자동으로 분산이 돼요. 다만 바구니 안이 한 분야(예: 반도체)에만 쏠려 있으면 분산 효과는 작아요.</p>' +
     '<h3>1년 수익률</h3><p>최근 1년간 가격이 얼마나 올랐는지(배당 포함, 달러 기준)예요. 과거 성과일 뿐 미래를 보장하지 않아요. 이 앱의 점수에서 “수익성”은 이 값으로 계산해요.</p>' +
     '<h3>배당수익률</h3><p>가격 대비 한 해 배당을 얼마 주는지(%)예요. 높을수록 좋아 보이지만, 가격이 떨어져 비율만 높아 보이는 경우도 있어요. 배당엔 보통 세금이 붙는데 이 앱은 세금을 반영하지 않아요.</p>' +
@@ -1075,6 +1215,15 @@ function openEdu() {
     '</div>');
 }
 document.getElementById('eduBtn').addEventListener('click', openEdu);
+// 첫 방문 안내(한 번만 노출, 닫으면 다시 안 뜸)
+(function () {
+  const INTRO_KEY = 'etf_seen_intro';
+  const box = document.getElementById('intro');
+  try { if (!localStorage.getItem(INTRO_KEY)) box.hidden = false; } catch (e) {}
+  document.getElementById('introClose').addEventListener('click', function () {
+    box.hidden = true; try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
+  });
+})();
 // 맨 위로
 (function () {
   const fab = document.getElementById('scrollTop');
@@ -1110,7 +1259,9 @@ function cardHtml(r, hero, rank) {
   const badge = hero ? '<span class="herobadge">🏆 1위</span> ' : '<span class="rank">' + rank + '</span>';
   return '<div class="card' + (hero ? ' herocard' : '') + '">' +
     '<div class="top">' +
-      '<div class="name">' + badge + r.ticker + ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
+      '<div class="name">' + badge + r.ticker +
+        (heldTickers.has(r.ticker) ? ' <span class="heldbadge">보유 중</span>' : '') +
+        ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
       '<div style="display:flex;align-items:center;gap:10px;">' +
         '<button class="star' + (favorites.has(r.ticker) ? ' on' : '') + '" data-ticker="' + r.ticker + '" title="즐겨찾기" aria-label="즐겨찾기">★</button>' +
         '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
@@ -1133,7 +1284,8 @@ function cardHtml(r, hero, rank) {
       '<div class="dscore">세부점수 — 수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + ' (각 0~100)</div>' +
       '<div class="reason">' + r.reason + '</div>' +
     '</div>' +
-    '<div class="links"><a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a></div>' +
+    '<div class="links"><a href="https://finance.yahoo.com/quote/' + r.ticker + '" target="_blank" rel="noopener">Yahoo Finance에서 보기 ↗</a>' +
+      '<a data-rec-trade="' + r.ticker + '" style="cursor:pointer;">📝 기록하기</a></div>' +
   '</div>';
 }
 
@@ -1171,6 +1323,7 @@ function themeRankHtml(results) {
 function render(d) {
   lastData = d;
   lastFetchedAt = new Date();
+  heldTickers = heldTickerSet();
   const w = d.weights;
   const header =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
@@ -1180,7 +1333,8 @@ function render(d) {
 
   if (!d.results.length) {
     document.getElementById('result').innerHTML = header +
-      '<div class="empty">조건에 맞는 종목이 없습니다.<br/>배당 필터나 최소 배당수익률을 완화해 보세요.</div>';
+      '<div class="empty">조건에 맞는 종목이 없습니다.<br/>배당 필터나 최소 배당수익률을 완화해 보세요.' +
+      '<div style="margin-top:12px;"><button class="pill" data-reset-filters style="display:inline-block;width:auto;padding:8px 16px;">필터 초기화</button></div></div>';
     if (chart) { chart.destroy(); chart = null; }
     return;
   }
@@ -1195,7 +1349,7 @@ function render(d) {
 
   const sortbar = '<div class="sortbar">정렬 ' + Object.keys(SORTS).map(function (k) {
     return '<button class="spill' + (k === sortKey ? ' active' : '') + '" data-sort="' + k + '">' + SORTS[k].label + '</button>';
-  }).join('') + '</div>';
+  }).join('') + '<button class="spill" data-export-csv title="현재 결과를 표로 내려받기" style="margin-left:auto;">⬇️ CSV</button></div>';
 
   const asof = '<div class="wbar asof">' + hhmm(lastFetchedAt) + ' 기준 · <a id="refreshBtn">새로고침</a> · ' + fxLine(d.fx) + '</div>';
 
@@ -1400,6 +1554,9 @@ async function renderTrades() {
     wrap.innerHTML = '<p style="color:var(--sub);font-size:13px;">아직 매수 기록이 없습니다. 위에서 추가해 보세요.</p>';
     totalEl.innerHTML = ''; listWrap.hidden = true;
     document.getElementById('portfolioSummary').hidden = true;
+    // 마지막 거래까지 지웠으면 추천 카드의 '보유 중' 배지도 즉시 정리
+    if (heldTickers.size && lastData) { heldTickers = new Set(); render(lastData); }
+    else heldTickers = new Set();
     return;
   }
   // 시간순으로 매수/매도 처리(평균단가법). qty/cost=현재 보유, realized=실현손익
@@ -1478,6 +1635,10 @@ async function renderTrades() {
     const tag = (t.type === 'sell') ? '<span class="down">매도</span>' : '<span class="up">매수</span>';
     return '<div class="trow"><span>' + t.date + ' · ' + tag + ' ' + t.ticker + ' · ' + t.qty + '주 @ $' + t.price + '</span><a data-del-trade="' + t.id + '">삭제</a></div>';
   }).join('');
+  // 보유 변동을 추천 결과 카드의 '보유 중' 배지에도 반영
+  const held = heldTickerSet();
+  const changed = held.size !== heldTickers.size || Array.from(held).some(function (x) { return !heldTickers.has(x); });
+  if (lastData && changed) render(lastData);
 }
 
 // 보유 종목 평가액 배분 도넛 (Trading212/퍼스널캐피털 벤치마킹)
@@ -1512,6 +1673,48 @@ document.getElementById('tradePanel').addEventListener('click', function (e) {
   const del = e.target.closest('[data-del-trade]');
   if (del) { saveTrades(loadTrades().filter(function (t) { return t.id !== del.dataset.delTrade; })); renderTrades(); }
 });
+// 거래 백업/복원 — 이 기기에만 저장되므로 직접 내려받아 보관할 수 있게
+function downloadBlob(name, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function todayTag() { return new Date().toISOString().slice(0, 10); }
+document.getElementById('tExport').addEventListener('click', function () {
+  const t = loadTrades();
+  if (!t.length) { toast('내보낼 거래가 없어요'); return; }
+  const esc = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const rows = [['날짜', '구분', '티커', '수량', '단가(USD)']];
+  t.slice().sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; })
+    .forEach(function (r) { rows.push([r.date || '', (r.type || 'buy') === 'sell' ? '매도' : '매수', r.ticker, r.qty, r.price]); });
+  const csv = '﻿' + rows.map(function (r) { return r.map(esc).join(','); }).join('\r\n');
+  downloadBlob('거래내역_' + todayTag() + '.csv', csv, 'text/csv;charset=utf-8;');
+});
+document.getElementById('tBackup').addEventListener('click', function () {
+  const t = loadTrades();
+  if (!t.length) { toast('백업할 거래가 없어요'); return; }
+  downloadBlob('거래백업_' + todayTag() + '.json', JSON.stringify({ v: 1, trades: t }, null, 2), 'application/json');
+});
+document.getElementById('tRestoreBtn').addEventListener('click', function () { document.getElementById('tRestore').click(); });
+document.getElementById('tRestore').addEventListener('change', function (e) {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = function () {
+    let data;
+    try { data = JSON.parse(reader.result); } catch (err) { toast('파일을 읽을 수 없어요'); return; }
+    const arr = Array.isArray(data) ? data : (data && Array.isArray(data.trades) ? data.trades : null);
+    if (!arr) { toast('거래 백업 파일이 아니에요'); return; }
+    const clean = arr.filter(function (t) { return t && t.ticker && t.qty > 0 && t.price >= 0; })
+      .map(function (t) {
+        return { id: t.id || (Date.now() + '' + Math.floor(Math.random() * 1000)), date: t.date || '', ticker: String(t.ticker), qty: +t.qty, price: +t.price, type: t.type === 'sell' ? 'sell' : 'buy' };
+      });
+    if (!clean.length) { toast('복원할 거래가 없어요'); return; }
+    if (!confirm('지금 거래 ' + loadTrades().length + '건을 백업 ' + clean.length + '건으로 바꿀까요? (기존 기록은 사라져요)')) return;
+    saveTrades(clean); renderTrades(); toast('거래 ' + clean.length + '건을 복원했어요');
+  };
+  reader.readAsText(f); e.target.value = '';
+});
 // '내 투자' 요약 누르면 실거래 탭으로 이동
 document.getElementById('portfolioSummary').addEventListener('click', function () {
   document.querySelectorAll('#tabs .tab').forEach(function (t) { t.classList.toggle('active', t.dataset.tab === 'trade'); });
@@ -1529,6 +1732,11 @@ document.getElementById('portfolioSummary').addEventListener('click', function (
   renderPresets();
   const fromUrl = queryToSettings(location.search.slice(1));
   if (fromUrl) { applySettings(fromUrl); setCatActive(null); }
+  else {                                  // URL 공유가 없으면 마지막에 쓴 성향·목표·필터·정렬 복원
+    const pf = loadPrefs();
+    if (pf && pf.sort && SORTS[pf.sort]) state.sort = pf.sort;
+    applySettings(pf);
+  }
   state.ran = true;   // 이후 변경은 실시간 갱신
   run();              // 페이지 열면 기본값(중립형·배당) 또는 공유 링크 설정으로 결과 바로 표시
 })();

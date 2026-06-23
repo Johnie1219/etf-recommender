@@ -356,6 +356,7 @@
         <p>위험 성향과 목표를 고르면, 대표 미국 ETF를 점수화해 보여줍니다.</p>
       </div>
       <div style="display:flex;align-items:flex-start;gap:8px;flex-shrink:0;">
+        <button id="eduBtn" class="themebtn" title="ETF 기초 알아보기" aria-label="ETF 기초 알아보기">📚</button>
         <button id="helpBtn" class="themebtn" title="도움말" aria-label="도움말">?</button>
         <button id="themeToggle" class="themebtn" title="다크 모드" aria-label="다크 모드">🌙</button>
         <div class="userbar" id="userbar"></div>
@@ -1059,6 +1060,21 @@ function openHelp() {
     '</div>');
 }
 document.getElementById('helpBtn').addEventListener('click', openHelp);
+// ETF 기초 알아보기 — 처음 보는 사람도 이해할 수 있게. 모두 교육·참고용.
+function openEdu() {
+  openSheet('ETF 기초 알아보기', '<div class="helpsheet">' +
+    '<p style="color:var(--mut);">아래는 교육·참고용 설명이에요. 특정 종목 매수·매도 권유가 아니며, 모든 투자에는 원금 손실 위험이 있어요.</p>' +
+    '<h3>ETF가 뭔가요?</h3><p>여러 주식·채권을 한 바구니에 담아 거래소에서 주식처럼 사고파는 상품이에요. 한 종목만 사도 자동으로 분산이 돼요. 다만 바구니 안이 한 분야(예: 반도체)에만 쏠려 있으면 분산 효과는 작아요.</p>' +
+    '<h3>1년 수익률</h3><p>최근 1년간 가격이 얼마나 올랐는지(배당 포함, 달러 기준)예요. 과거 성과일 뿐 미래를 보장하지 않아요. 이 앱의 점수에서 “수익성”은 이 값으로 계산해요.</p>' +
+    '<h3>배당수익률</h3><p>가격 대비 한 해 배당을 얼마 주는지(%)예요. 높을수록 좋아 보이지만, 가격이 떨어져 비율만 높아 보이는 경우도 있어요. 배당엔 보통 세금이 붙는데 이 앱은 세금을 반영하지 않아요.</p>' +
+    '<h3>변동성</h3><p>가격이 출렁이는 정도예요. 높을수록 많이 오를 수도, 많이 빠질 수도 있어요. 이 앱의 “안정성” 점수는 변동성이 낮을수록 높아요.</p>' +
+    '<h3>운용보수(수수료)</h3><p>ETF를 굴리는 데 매년 빠지는 비용이에요. 길게 보면 수익에 영향을 줘요. 이 앱 점수엔 운용보수가 빠져 있으니, 실제 투자 전엔 각 ETF의 보수를 꼭 확인하세요.</p>' +
+    '<h3>커버드콜(고배당) 주의</h3><p>JEPI·QYLD 같은 상품은 배당이 매우 높지만, 그 대가로 큰 상승은 일부 포기해요. 배당률만 보고 고르면 총수익이 기대와 다를 수 있어요.</p>' +
+    '<h3>환율</h3><p>미국 ETF는 달러 자산이라 원/달러 환율이 변하면 원화로 본 손익도 달라져요. 이 앱은 원화 환산을 참고로만 보여주고, 점수 계산엔 환율을 넣지 않아요.</p>' +
+    '<h3>꼭 기억해요</h3><p>분산·장기·본인이 감당할 위험 범위 안에서. 이 앱은 판단을 돕는 도구일 뿐, 결정과 책임은 본인에게 있어요.</p>' +
+    '</div>');
+}
+document.getElementById('eduBtn').addEventListener('click', openEdu);
 // 맨 위로
 (function () {
   const fab = document.getElementById('scrollTop');

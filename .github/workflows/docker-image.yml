@@ -2,6 +2,7 @@ name: Docker image (GHCR)
 
 # main 에 푸시되면 컨테이너 이미지를 빌드해 GitHub Container Registry(GHCR)에 올린다.
 # NAS 에서는 이 이미지를 받아 실행만 하면 되므로, 소스 내려받기/빌드 없이 폰으로도 설정 가능.
+# 인텔(amd64)과 ARM64(예: 시놀로지 DS223j·Realtek RTD1619B) 둘 다에서 돌도록 멀티아키로 빌드한다.
 on:
   push:
     branches: [main]
@@ -17,6 +18,13 @@ jobs:
     steps:
       - uses: actions/checkout@v4
 
+      # ARM64 등 다른 CPU용 이미지를 교차 빌드하기 위한 준비
+      - name: Set up QEMU
+        uses: docker/setup-qemu-action@v3
+
+      - name: Set up Buildx
+        uses: docker/setup-buildx-action@v3
+
       - name: Log in to GHCR
         uses: docker/login-action@v3
         with:
@@ -29,4 +37,8 @@ jobs:
         with:
           context: .
           push: true
+          # 인텔 NAS/서버 + ARM64 시놀로지(DS223j 등) 모두 지원
+          platforms: linux/amd64,linux/arm64
+          # 단일 이미지 매니페스트만 올려 Container Manager 가 헷갈리지 않게 한다
+          provenance: false
           tags: ghcr.io/johnie1219/etf-recommender:latest

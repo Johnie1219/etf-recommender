@@ -652,6 +652,25 @@ ETF_POOL = [
 
 POOL_BY_TICKER = {e["ticker"]: e for e in ETF_POOL}
 
+# ---------------------------------------------------------------------------
+# 고위험(레버리지·인버스) 풀 — 일부러 ETF_POOL/POOL_BY_TICKER 와 분리한다.
+#   - 추천 점수 계산·정렬·종목 선택(?tickers=) 대상이 절대 아니다(별도 칸에서 경고와 함께 표시만).
+#   - mult: 사람이 읽는 배수/방향, base: 기초지수, note: 한 줄 핵심 주의.
+#   - ret1y/vol/yield 는 yfinance 실패 시에만 쓰는 대략적 폴백 추정값(미래 예측 아님).
+# ---------------------------------------------------------------------------
+HIGH_RISK_POOL = [
+    {"ticker": "TQQQ", "name": "나스닥100 3배",     "mult": "+3배 레버리지", "base": "나스닥100",        "note": "기초지수 하루 변동의 3배를 추종. 여러 날 보유 시 감쇠 위험.", "yield": 0.0, "ret1y": 45.0, "vol": 60.0},
+    {"ticker": "SOXL", "name": "반도체 3배",         "mult": "+3배 레버리지", "base": "필라델피아 반도체", "note": "반도체 지수의 3배. 변동이 매우 크고 급락 시 손실이 큼.",     "yield": 0.0, "ret1y": 50.0, "vol": 90.0},
+    {"ticker": "UPRO", "name": "S&P 500 3배",        "mult": "+3배 레버리지", "base": "S&P 500",         "note": "S&P 500 하루 변동의 3배. 장기 보유에 부적합.",              "yield": 0.0, "ret1y": 35.0, "vol": 50.0},
+    {"ticker": "TMF",  "name": "20년+ 국채 3배",     "mult": "+3배 레버리지", "base": "20년+ 미국 국채",  "note": "장기국채의 3배. 금리 변동에 매우 민감.",                    "yield": 3.0, "ret1y": -10.0, "vol": 40.0},
+    {"ticker": "SQQQ", "name": "나스닥100 -3배(인버스)", "mult": "-3배 인버스",  "base": "나스닥100",        "note": "지수가 오르면 약 3배로 하락. 하락 베팅용, 장기 보유 시 감쇠.", "yield": 0.0, "ret1y": -40.0, "vol": 60.0},
+    {"ticker": "SPXU", "name": "S&P 500 -3배(인버스)",  "mult": "-3배 인버스",  "base": "S&P 500",         "note": "S&P 500이 오르면 약 3배로 하락. 단기 헤지·투기용.",          "yield": 0.0, "ret1y": -30.0, "vol": 50.0},
+]
+HIGH_RISK_BY_TICKER = {e["ticker"]: e for e in HIGH_RISK_POOL}
+# fetch_metrics 가 폴백 기준값을 찾을 때만 쓰는 통합 조회표(추천 풀 + 고위험 풀).
+# 점수/추천 로직은 여전히 POOL_BY_TICKER 만 보므로 고위험 종목은 점수 대상이 아니다.
+_META_BY_TICKER = {**POOL_BY_TICKER, **HIGH_RISK_BY_TICKER}
+
 # 테마(카테고리)별 한 줄 설명 — 화면에서 구분·이해를 돕는다(투자 권유 아님).
 CAT_DESC = {
     "성장": "지수·대형 성장주 중심. 장기 우상향을 기대하되 가격 변동은 감수.",
@@ -698,7 +717,7 @@ def _downsample(series, n):
 #    - yield: 최근 12개월 배당 합계 / 현재가 × 100 (%)
 # ---------------------------------------------------------------------------
 def fetch_metrics(ticker: str):
-    base = POOL_BY_TICKER[ticker]
+    base = _META_BY_TICKER[ticker]
 
     # 캐시에 신선한(TTL 이내) 실시간 데이터가 있으면 재사용
     cached = _METRIC_CACHE.get(ticker)
@@ -908,6 +927,52 @@ def list_etfs():
         "cat_desc": CAT_DESC,
         "cat_order": CAT_ORDER,
     }
+
+
+# 고위험(레버리지·인버스) 종목의 강한 경고 문구 — 화면 상단에 항상 함께 표시한다.
+HIGH_RISK_WARNING = (
+    "⚠️ 레버리지·인버스 ETF는 ‘하루’ 단위로 기초지수의 배수를 맞추도록 설계되어, "
+    "여러 날 보유하면 복리·변동성 때문에 단순 배수와 크게 달라질 수 있습니다(가치 감쇠). "
+    "장기 보유에 부적합하며 짧은 기간에도 원금의 상당 부분을 잃을 수 있습니다. "
+    "이 종목들은 이 앱의 추천 점수·정렬 대상이 아니며, 교육·참고용입니다. 투자 권유가 아닙니다."
+)
+
+
+@app.get("/api/high-risk")
+def list_high_risk():
+    """고위험(레버리지·인버스) 종목 — 추천 점수 없이 참고 수치만, 강한 경고와 함께.
+    실시간(yfinance) 지표가 있으면 쓰고, 실패하면 폴백 추정값(source 표시)."""
+    tickers = [e["ticker"] for e in HIGH_RISK_POOL]
+    with ThreadPoolExecutor(max_workers=min(8, len(tickers)) + 1) as ex:
+        fx_future = ex.submit(fetch_fx)
+        metric_list = list(ex.map(fetch_metrics, tickers))
+    fx = fx_future.result()
+
+    by_t = {m["ticker"]: m for m in metric_list}
+    rows = []
+    sources = set()
+    for e in HIGH_RISK_POOL:  # 입력 순서 유지(점수로 정렬하지 않는다)
+        m = by_t[e["ticker"]]
+        sources.add(m["source"])
+        price_krw = round(m["price"] * fx["rate"]) if m["price"] is not None else None
+        rows.append({
+            "ticker": e["ticker"],
+            "name": e["name"],
+            "mult": e["mult"],
+            "base": e["base"],
+            "note": e["note"],
+            "ret1y": m["ret1y"],
+            "vol": m["vol"],
+            "yield": m["yield"],
+            "price": m["price"],
+            "price_krw": price_krw,
+            "low52": m.get("low52"),
+            "high52": m.get("high52"),
+            "spark": m.get("spark"),
+            "source": m["source"],
+        })
+    overall = "yfinance" if sources == {"yfinance"} else ("fallback" if sources == {"fallback"} else "mixed")
+    return {"warning": HIGH_RISK_WARNING, "source": overall, "fx": fx, "results": rows}
 
 
 @app.get("/api/recommend")

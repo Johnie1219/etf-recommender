@@ -118,6 +118,7 @@
 
   /* 알약 버튼: 그리드로 칸을 균일하게 (글자 길이와 무관하게 같은 너비) */
   .seg { display: grid; gap: 8px; }
+  .seg-2 { grid-template-columns: repeat(2, 1fr); }
   .seg-3 { grid-template-columns: repeat(3, 1fr); }
   .seg-4 { grid-template-columns: repeat(4, 1fr); }
   .seg-6 { grid-template-columns: repeat(3, 1fr); }
@@ -462,12 +463,16 @@
 
         <!-- 탭: 실거래 -->
         <div class="tabpanel" data-panel="trade" id="tradePanel">
-          <p class="hint" style="margin-top:0;">실제 매수 기록(이 기기에 저장)을 넣으면 현재가 대비 평가손익을 원화로 보여줍니다.</p>
+          <p class="hint" style="margin-top:0;">실제 매수·매도 기록(이 기기에 저장)을 넣으면 평가손익·실현손익을 원화로 보여줍니다.</p>
+          <div class="seg seg-2" id="tradeTypeSeg" style="margin-bottom:8px;">
+            <button type="button" class="pill active" data-v="buy">매수</button>
+            <button type="button" class="pill" data-v="sell">매도</button>
+          </div>
           <form id="tradeForm" class="tradeform">
             <input type="date" id="tDate" />
             <select id="tTicker"></select>
             <input type="number" id="tQty" placeholder="수량" step="any" min="0" />
-            <input type="number" id="tPrice" placeholder="매수단가($)" step="any" min="0" />
+            <input type="number" id="tPrice" placeholder="단가($)" step="any" min="0" />
             <button type="submit" class="pill" id="tAdd">추가</button>
           </form>
           <div class="chartbox" id="allocBox" hidden><canvas id="allocChart" height="200"></canvas></div>
@@ -1333,18 +1338,25 @@ function fillTickerSelect() {
 }
 
 document.getElementById('tDate').value = new Date().toISOString().slice(0, 10);
+let tradeType = 'buy';
+document.getElementById('tradeTypeSeg').addEventListener('click', function (e) {
+  const b = e.target.closest('.pill'); if (!b) return;
+  this.querySelectorAll('.pill').forEach(function (p) { p.classList.remove('active'); });
+  b.classList.add('active'); tradeType = b.dataset.v;
+  document.getElementById('tPrice').placeholder = (tradeType === 'sell' ? '매도단가($)' : '단가($)');
+});
 document.getElementById('tradeForm').addEventListener('submit', function (e) {
   e.preventDefault();
   const date = document.getElementById('tDate').value;
   const ticker = document.getElementById('tTicker').value;
   const qty = parseFloat(document.getElementById('tQty').value);
   const price = parseFloat(document.getElementById('tPrice').value);
-  if (!date || !ticker || !(qty > 0) || !(price > 0)) { toast('날짜·종목·수량·매수단가를 올바르게 입력하세요'); return; }
+  if (!date || !ticker || !(qty > 0) || !(price > 0)) { toast('날짜·종목·수량·단가를 올바르게 입력하세요'); return; }
   const list = loadTrades();
-  list.push({ id: Date.now() + '' + Math.floor(Math.random() * 1000), date: date, ticker: ticker, qty: qty, price: price });
+  list.push({ id: Date.now() + '' + Math.floor(Math.random() * 1000), date: date, ticker: ticker, qty: qty, price: price, type: tradeType });
   saveTrades(list);
   document.getElementById('tQty').value = ''; document.getElementById('tPrice').value = '';
-  renderTrades(); toast('매수 기록을 추가했어요');
+  renderTrades(); toast((tradeType === 'sell' ? '매도' : '매수') + ' 기록을 추가했어요');
 });
 
 // 현재가·배당수익률·환율을 추천 API로 받아온다(점수는 무시)
@@ -1374,57 +1386,81 @@ async function renderTrades() {
     document.getElementById('portfolioSummary').hidden = true;
     return;
   }
+  // 시간순으로 매수/매도 처리(평균단가법). qty/cost=현재 보유, realized=실현손익
+  const ord = trades.slice().sort(function (a, b) { return ((a.date || '') + a.id) < ((b.date || '') + b.id) ? -1 : 1; });
   const agg = {};
-  trades.forEach(function (t) { const a = agg[t.ticker] || (agg[t.ticker] = { qty: 0, cost: 0 }); a.qty += t.qty; a.cost += t.qty * t.price; });
+  ord.forEach(function (t) {
+    const a = agg[t.ticker] || (agg[t.ticker] = { qty: 0, cost: 0, realized: 0 });
+    if ((t.type || 'buy') === 'sell') {
+      const sq = Math.min(t.qty, a.qty), avg = a.qty > 0 ? a.cost / a.qty : 0;
+      a.realized += sq * (t.price - avg); a.cost -= sq * avg; a.qty -= sq;
+    } else { a.qty += t.qty; a.cost += t.qty * t.price; }
+  });
   const tickers = Object.keys(agg);
   const pdata = await fetchPrices(tickers);
   const fx = pdata.fx, rate = fx.rate, divs = loadDiv();
-  let totCost = 0, totVal = 0, haveAll = true;
+  let totCost = 0, totVal = 0, totReal = 0, haveAll = true;
   const alloc = [];
   const cards = tickers.map(function (tk) {
-    const a = agg[tk], avg = a.cost / a.qty, cur = pdata.prices[tk];
-    totCost += a.cost;
+    const a = agg[tk];
+    totReal += a.realized;
+    const realLine = Math.abs(a.realized) > 0.005
+      ? '<div class="hsub ' + (a.realized >= 0 ? 'up' : 'down') + '" style="font-weight:600;">실현손익 ' + usdS(a.realized) + ' · ' + wonS(a.realized * rate) + '</div>' : '';
     let right = '', body = '';
-    if (cur == null) {
-      haveAll = false;
-      body = '<div class="hsub">현재가를 불러오지 못했습니다 (잠시 후 다시).</div>';
+    if (a.qty <= 1e-7) {
+      body = '<div class="hsub">전량 매도됨</div>' + realLine;
+      right = realLine ? '<span class="hpnl ' + (a.realized >= 0 ? 'up' : 'down') + '">실현</span>' : '';
     } else {
-      const val = a.qty * cur, pnl = val - a.cost, pct = a.cost > 0 ? pnl / a.cost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
-      totVal += val;
-      alloc.push({ tk: tk, val: val });
-      const yld = pdata.yields[tk] || 0, predDiv = a.cost * yld / 100, actDiv = parseFloat(divs[tk]) || 0;
-      const acc = predDiv > 0 ? (actDiv / predDiv * 100) : null;
-      right = '<span class="hpnl ' + cls + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
-      body =
-        '<div class="hsub">수량 ' + a.qty + '주 · 평균 $' + avg.toFixed(2) + ' · 현재 $' + cur + '</div>' +
-        '<div class="hsub">원금 약 ' + won(a.cost * rate) + ' → 평가 약 ' + won(val * rate) + '</div>' +
-        '<div class="hsub ' + cls + '" style="font-weight:600;">평가손익 ' + usdS(pnl) + ' · ' + wonS(pnl * rate) + ' · ' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</div>' +
-        '<div class="divrow">실제 배당 $<input type="number" step="any" min="0" data-div="' + tk + '" value="' + (divs[tk] != null ? divs[tk] : '') + '" placeholder="0"/>' +
-          '<span>· 앱 예상 $' + predDiv.toFixed(1) + (acc != null ? ' · 정확도 ' + acc.toFixed(0) + '%' : '') + '</span></div>';
+      const avg = a.cost / a.qty, cur = pdata.prices[tk];
+      totCost += a.cost;
+      if (cur == null) {
+        haveAll = false;
+        body = '<div class="hsub">보유 ' + a.qty + '주 · 평균 $' + avg.toFixed(2) + '</div><div class="hsub">현재가를 불러오지 못했습니다.</div>' + realLine;
+      } else {
+        const val = a.qty * cur, pnl = val - a.cost, pct = a.cost > 0 ? pnl / a.cost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
+        totVal += val; alloc.push({ tk: tk, val: val });
+        const yld = pdata.yields[tk] || 0, predDiv = a.cost * yld / 100, actDiv = parseFloat(divs[tk]) || 0;
+        const acc = predDiv > 0 ? (actDiv / predDiv * 100) : null;
+        right = '<span class="hpnl ' + cls + '">' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</span>';
+        body =
+          '<div class="hsub">보유 ' + a.qty + '주 · 평균 $' + avg.toFixed(2) + ' · 현재 $' + cur + '</div>' +
+          '<div class="hsub">원금 약 ' + won(a.cost * rate) + ' → 평가 약 ' + won(val * rate) + '</div>' +
+          '<div class="hsub ' + cls + '" style="font-weight:600;">평가손익 ' + usdS(pnl) + ' · ' + wonS(pnl * rate) + ' · ' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '%</div>' +
+          realLine +
+          '<div class="divrow">실제 배당 $<input type="number" step="any" min="0" data-div="' + tk + '" value="' + (divs[tk] != null ? divs[tk] : '') + '" placeholder="0"/>' +
+            '<span>· 앱 예상 $' + predDiv.toFixed(1) + (acc != null ? ' · 정확도 ' + acc.toFixed(0) + '%' : '') + '</span></div>';
+      }
     }
     return '<div class="hold"><div class="htop"><span class="htk">' + tk + '</span>' + right + '</div>' + body + '</div>';
   }).join('');
   wrap.innerHTML = cards;
   drawAlloc(alloc);
   const psum = document.getElementById('portfolioSummary');
+  const realTot = Math.abs(totReal) > 0.005
+    ? ' · 실현 <b class="' + (totReal >= 0 ? 'up' : 'down') + '">' + wonS(totReal * rate) + '</b>' : '';
   if (totVal > 0) {
     const pnl = totVal - totCost, pct = totCost > 0 ? pnl / totCost * 100 : 0, cls = pnl >= 0 ? 'up' : 'down';
-    totalEl.innerHTML = '<div class="ttotal">합계 — 원금 약 ' + won(totCost * rate) + ' → 평가 약 ' + won(totVal * rate) +
-      ' <b class="' + cls + '">(' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '% · ' + wonS(pnl * rate) + ')</b>' +
+    totalEl.innerHTML = '<div class="ttotal">보유 합계 — 원금 약 ' + won(totCost * rate) + ' → 평가 약 ' + won(totVal * rate) +
+      ' <b class="' + cls + '">(' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '% · ' + wonS(pnl * rate) + ')</b>' + realTot +
       (haveAll ? '' : ' <span style="color:var(--sub)">※ 일부 현재가 누락</span>') + '</div>' +
       '<div class="hint" style="margin-top:6px;">환율 ' + Math.round(rate).toLocaleString('ko-KR') + '원' + (fx.source === 'fallback' ? ' (기본값)' : ' (실시간)') + ' 적용. 세금·수수료 미반영.</div>';
-    // 결과 위 '내 투자' 요약 배너
     psum.innerHTML = '<span class="pmore">실거래 자세히 ↗</span>' +
-      '<div class="ptitle">💼 내 투자 (' + tickers.length + '종목)</div>' +
+      '<div class="ptitle">💼 내 투자 (보유 평가)</div>' +
       '<div class="pval">' + won(totVal * rate) + ' <span class="' + cls + '">(' + (pct >= 0 ? '+' : '') + pct.toFixed(1) + '% · ' + wonS(pnl * rate) + ')</span></div>';
     psum.hidden = false;
+  } else if (Math.abs(totReal) > 0.005) {
+    // 보유 없음, 실현손익만
+    totalEl.innerHTML = '<div class="ttotal">실현손익 합계 <b class="' + (totReal >= 0 ? 'up' : 'down') + '">' + wonS(totReal * rate) + '</b></div>';
+    psum.innerHTML = '<span class="pmore">실거래 자세히 ↗</span><div class="ptitle">💼 내 투자 (실현손익)</div>' +
+      '<div class="pval ' + (totReal >= 0 ? 'up' : 'down') + '">' + wonS(totReal * rate) + '</div>';
+    psum.hidden = false;
   } else {
-    totalEl.innerHTML = '';
-    psum.hidden = true;
+    totalEl.innerHTML = ''; psum.hidden = true;
   }
   listWrap.hidden = false;
   listEl.innerHTML = trades.slice().reverse().map(function (t) {
-    return '<div class="trow"><span>' + t.date + ' · ' + t.ticker + ' · ' + t.qty + '주 @ $' + t.price + '</span><a data-del-trade="' + t.id + '">삭제</a></div>';
+    const tag = (t.type === 'sell') ? '<span class="down">매도</span>' : '<span class="up">매수</span>';
+    return '<div class="trow"><span>' + t.date + ' · ' + tag + ' ' + t.ticker + ' · ' + t.qty + '주 @ $' + t.price + '</span><a data-del-trade="' + t.id + '">삭제</a></div>';
   }).join('');
 }
 

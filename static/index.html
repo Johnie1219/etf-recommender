@@ -900,6 +900,8 @@ document.getElementById('result').addEventListener('click', function (e) {
   if (cb) { toggleCompare(cb.dataset.cmp); return; }
   const cr = e.target.closest('.catrow');
   if (cr) { selectCategory(cr.dataset.cat); return; }
+  const ex = e.target.closest('[data-export-csv]');
+  if (ex) { exportResultsCsv(); return; }
   const sp = e.target.closest('.spill');
   if (sp) { state.sort = sp.dataset.sort; if (lastData) render(lastData); return; }
   const rt = e.target.closest('[data-rec-trade]');
@@ -927,6 +929,22 @@ function prefillTrade(ticker) {
   document.getElementById('tradePanel').scrollIntoView({ behavior: 'smooth', block: 'start' });
   setTimeout(function () { document.getElementById('tQty').focus(); }, 300);
   toast(ticker + ' 기록 준비 — 수량·단가만 넣으세요');
+}
+
+// 현재 추천 결과를 화면에 보이는 순서대로 CSV로 내려받기(표시된 숫자 그대로, 참고용)
+function exportResultsCsv() {
+  if (!lastData || !lastData.results || !lastData.results.length) { toast('내보낼 결과가 없어요'); return; }
+  const sk = SORTS[state.sort] ? state.sort : 'score';
+  const rows = lastData.results.slice().sort(SORTS[sk].cmp);
+  const esc = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const head = ['순위', '티커', '이름', '분류', '점수', '1년수익률(달러,%)', '원화환산1년(%)', '변동성(%)', '배당수익률(%)', '현재가(USD)', '현재가(원)'];
+  const lines = [head];
+  rows.forEach(function (r, i) {
+    lines.push([i + 1, r.ticker, r.name, r.cat, r.score, r.ret1y, r.ret1y_krw == null ? '' : r.ret1y_krw, r.vol, r.yield, r.price == null ? '' : r.price, r.price_krw == null ? '' : Math.round(r.price_krw)]);
+  });
+  const csv = '﻿' + lines.map(function (r) { return r.map(esc).join(','); }).join('\r\n');
+  downloadBlob('ETF추천_' + CAT_LABEL[lastData.goal] + '_' + RISK_LABEL[lastData.risk] + '_' + todayTag() + '.csv', csv, 'text/csv;charset=utf-8;');
+  toast('CSV로 내보냈어요 (' + rows.length + '개, 세금·수수료 미반영)');
 }
 
 // 종목을 손으로 바꾸면 '테마' 빠른선택 강조는 헷갈리니 해제(전체일 때만 유지)
@@ -1275,7 +1293,7 @@ function render(d) {
 
   const sortbar = '<div class="sortbar">정렬 ' + Object.keys(SORTS).map(function (k) {
     return '<button class="spill' + (k === sortKey ? ' active' : '') + '" data-sort="' + k + '">' + SORTS[k].label + '</button>';
-  }).join('') + '</div>';
+  }).join('') + '<button class="spill" data-export-csv title="현재 결과를 표로 내려받기" style="margin-left:auto;">⬇️ CSV</button></div>';
 
   const asof = '<div class="wbar asof">' + hhmm(lastFetchedAt) + ' 기준 · <a id="refreshBtn">새로고침</a> · ' + fxLine(d.fx) + '</div>';
 

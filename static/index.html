@@ -25,7 +25,22 @@
     --line: #e5e5e7;
     --bg: #f5f5f7;
     --card: #ffffff;
+    --hero: #f5f9ff;
+    --skel1: #ececef;
+    --skel2: #f6f6f8;
     --radius: 16px;
+  }
+  /* 다크 모드 (토글 시) */
+  html[data-theme="dark"] {
+    --blue: #0a84ff;
+    --ink: #f5f5f7;
+    --sub: #98989d;
+    --line: #38383a;
+    --bg: #000000;
+    --card: #1c1c1e;
+    --hero: #0a2540;
+    --skel1: #2c2c2e;
+    --skel2: #3a3a3c;
   }
   * { box-sizing: border-box; }
   body {
@@ -50,7 +65,7 @@
     max-width: 460px;
     margin: 8px auto 0;
     padding: 12px 16px;
-    background: #fff;
+    background: var(--card);
     border: 1px solid var(--blue);
     border-radius: 12px;
     font-size: 13px;
@@ -108,7 +123,7 @@
   .seg-6 { grid-template-columns: repeat(3, 1fr); }
   .pill {
     border: 1px solid var(--line);
-    background: #fff;
+    background: var(--card);
     color: var(--ink);
     border-radius: 999px;
     padding: 10px 8px;
@@ -130,6 +145,8 @@
   .userbar { display: flex; align-items: center; gap: 10px; white-space: nowrap; flex-shrink: 0; padding-top: 4px; }
   .userbar .uemail { font-size: 13px; color: var(--sub); max-width: 160px; overflow: hidden; text-overflow: ellipsis; }
   .userbar a { font-size: 13px; color: var(--blue); cursor: pointer; text-decoration: none; font-weight: 600; }
+  .themebtn { background: var(--card); border: 1px solid var(--line); border-radius: 999px;
+    width: 34px; height: 34px; font-size: 16px; cursor: pointer; line-height: 1; padding: 0; }
 
   /* 즐겨찾기 ★ */
   .star { background: none; border: none; cursor: pointer; font-size: 20px; line-height: 1; color: #d2d2d7; padding: 0 2px; font-family: inherit; }
@@ -160,7 +177,7 @@
   .preset .pacts a { color: var(--blue); cursor: pointer; margin-left: 12px; font-size: 12px; text-decoration: none; }
   .preset .pacts a.del { color: #c0392b; }
   .toast { position: fixed; left: 50%; bottom: 28px; transform: translateX(-50%);
-    background: var(--ink); color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px;
+    background: #2c2c2e; color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px;
     z-index: 60; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
   .toast.show { opacity: .95; }
 
@@ -168,7 +185,7 @@
   .tradeform { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 14px; }
   .tradeform input, .tradeform select {
     border: 1px solid var(--line); border-radius: 10px; padding: 11px 12px;
-    font-size: 14px; font-family: inherit; color: var(--ink); outline: none; background: #fff; width: 100%;
+    font-size: 14px; font-family: inherit; color: var(--ink); outline: none; background: var(--card); width: 100%;
   }
   .tradeform input:focus, .tradeform select:focus { border-color: var(--blue); }
   .tradeform #tAdd { grid-column: 1 / -1; }
@@ -196,7 +213,7 @@
   .urow .acts button { width: auto; display: inline-block; border: none; border-radius: 999px;
     padding: 7px 14px; font-size: 13px; font-weight: 600; font-family: inherit; cursor: pointer; margin-left: 6px; }
   .btn-approve { background: var(--blue); color: #fff; }
-  .btn-reject { background: #fff; color: #c0392b; border: 1px solid var(--line) !important; }
+  .btn-reject { background: var(--card); color: #c0392b; border: 1px solid var(--line) !important; }
   .btn-reject:disabled, .btn-approve:disabled { opacity: .5; }
 
   .btn {
@@ -257,11 +274,11 @@
   .lead b { color: var(--blue); }
   .lead .leadsub { font-size: 11px; color: var(--sub); font-weight: 500; }
   .sortbar { display: flex; align-items: center; gap: 6px; font-size: 12px; color: var(--sub); margin-bottom: 12px; flex-wrap: wrap; }
-  .spill { border: 1px solid var(--line); background: #fff; color: var(--sub); border-radius: 999px;
+  .spill { border: 1px solid var(--line); background: var(--card); color: var(--sub); border-radius: 999px;
     padding: 6px 12px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
   .spill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
   .asof a { color: var(--blue); cursor: pointer; text-decoration: none; }
-  .herocard { border: 1.5px solid var(--blue); background: #f5f9ff; }
+  .herocard { border: 1.5px solid var(--blue); background: var(--hero); }
   .herobadge { display: inline-block; background: var(--blue); color: #fff; font-size: 11px; font-weight: 700;
     padding: 2px 8px; border-radius: 999px; margin-right: 6px; vertical-align: middle; }
   /* 순위 번호 (토스 랭킹 리스트) */
@@ -285,7 +302,7 @@
   .portsum .pval { font-size: 16px; font-weight: 700; color: var(--ink); }
   .portsum .pmore { font-size: 12px; color: var(--blue); float: right; margin-top: 2px; }
   .skel-card { border: 1px solid var(--line); border-radius: 14px; padding: 16px; margin-bottom: 12px; }
-  .skel { background: linear-gradient(90deg,#ececef,#f6f6f8,#ececef); background-size: 200% 100%;
+  .skel { background: linear-gradient(90deg,var(--skel1),var(--skel2),var(--skel1)); background-size: 200% 100%;
     animation: sh 1.2s infinite; border-radius: 6px; }
   .skel-line { height: 12px; margin: 9px 0; }
   /* 스파크라인 + 52주 범위 바 */
@@ -314,7 +331,10 @@
         <h1>ETF 추천·분석</h1>
         <p>위험 성향과 목표를 고르면, 대표 미국 ETF를 점수화해 보여줍니다.</p>
       </div>
-      <div class="userbar" id="userbar"></div>
+      <div style="display:flex;align-items:flex-start;gap:8px;flex-shrink:0;">
+        <button id="themeToggle" class="themebtn" title="다크 모드" aria-label="다크 모드">🌙</button>
+        <div class="userbar" id="userbar"></div>
+      </div>
     </div>
   </header>
 
@@ -461,6 +481,31 @@
   </div>
 
 <script>
+// --- 다크 모드 ---
+function applyTheme(t) {
+  document.documentElement.setAttribute('data-theme', t);
+  const b = document.getElementById('themeToggle');
+  if (b) b.textContent = (t === 'dark') ? '☀️' : '🌙';
+  const meta = document.querySelector('meta[name="theme-color"]');
+  if (meta) meta.setAttribute('content', t === 'dark' ? '#000000' : '#f5f5f7');
+}
+(function () {
+  let t = 'light';
+  try { t = localStorage.getItem('etf_theme') || 'light'; } catch (e) {}
+  applyTheme(t);
+})();
+document.getElementById('themeToggle').addEventListener('click', function () {
+  const cur = document.documentElement.getAttribute('data-theme') === 'dark' ? 'dark' : 'light';
+  const next = cur === 'dark' ? 'light' : 'dark';
+  try { localStorage.setItem('etf_theme', next); } catch (e) {}
+  applyTheme(next);
+  if (lastData) render(lastData);   // 차트 색 갱신
+});
+function chartColors() {
+  const dark = document.documentElement.getAttribute('data-theme') === 'dark';
+  return { tick: dark ? '#98989d' : '#6e6e73', label: dark ? '#f5f5f7' : '#1d1d1f', grid: dark ? '#2c2c2e' : '#f0f0f2' };
+}
+
 const API = '';
 const state = { risk: 'neutral', goal: 'dividend', dividends: 'all', minYield: '0', top: '0', sort: 'score', ran: false };
 let chart = null;
@@ -1069,8 +1114,8 @@ function drawChart(rows) {
       maintainAspectRatio: false,
       plugins: { legend: { display: false } },
       scales: {
-        x: { min: 0, max: 100, grid: { color: '#f0f0f2' }, ticks: { color: '#6e6e73' } },
-        y: { grid: { display: false }, ticks: { color: '#1d1d1f', font: { weight: '600' } } }
+        x: { min: 0, max: 100, grid: { color: chartColors().grid }, ticks: { color: chartColors().tick } },
+        y: { grid: { display: false }, ticks: { color: chartColors().label, font: { weight: '600' } } }
       }
     }
   });
@@ -1296,7 +1341,7 @@ function drawAlloc(alloc) {
     },
     options: {
       responsive: true, maintainAspectRatio: false, cutout: '62%',
-      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, color: '#6e6e73' } } }
+      plugins: { legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 }, color: chartColors().tick } } }
     }
   });
 }

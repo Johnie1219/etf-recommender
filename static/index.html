@@ -1286,9 +1286,10 @@ function loadHighRisk() {
 }
 
 function renderHighRisk(d) {
+  d = d || {};
   const body = document.getElementById('hrBody');
-  const rows = (d && d.results) || [];
-  let html = '<div class="hr-warn">' + d.warning + '</div>';
+  const rows = d.results || [];
+  let html = '<div class="hr-warn">' + (d.warning || '') + '</div>';
   html += '<div class="hint" style="margin:0 0 10px;">' + srcBadge(d.source) + ' · 아래 수치는 과거·참고용이며 미래를 예측하지 않습니다. 추천 점수는 매기지 않습니다.</div>';
   rows.forEach(function (r) {
     const krw = (r.price_krw === null || r.price_krw === undefined) ? '' : ' (약 ' + won(r.price_krw) + ')';

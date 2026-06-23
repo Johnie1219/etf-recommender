@@ -916,7 +916,7 @@ document.getElementById('result').addEventListener('click', function (e) {
   const ex = e.target.closest('[data-export-csv]');
   if (ex) { exportResultsCsv(); return; }
   const sp = e.target.closest('.spill');
-  if (sp) { state.sort = sp.dataset.sort; if (lastData) render(lastData); return; }
+  if (sp) { state.sort = sp.dataset.sort; savePrefs(); if (lastData) render(lastData); return; }
   const rt = e.target.closest('[data-rec-trade]');
   if (rt) { prefillTrade(rt.dataset.recTrade); return; }
   const more = e.target.closest('.more');
@@ -1006,7 +1006,7 @@ function savePrefs() {
   try {
     localStorage.setItem(PREF_KEY, JSON.stringify({
       risk: state.risk, goal: state.goal, dividends: state.dividends,
-      minYield: state.minYield, top: state.top
+      minYield: state.minYield, top: state.top, sort: state.sort
     }));
   } catch (e) {}
 }
@@ -1707,7 +1707,11 @@ document.getElementById('portfolioSummary').addEventListener('click', function (
   renderPresets();
   const fromUrl = queryToSettings(location.search.slice(1));
   if (fromUrl) { applySettings(fromUrl); setCatActive(null); }
-  else { applySettings(loadPrefs()); }   // URL 공유가 없으면 마지막에 쓴 성향·목표·필터 복원
+  else {                                  // URL 공유가 없으면 마지막에 쓴 성향·목표·필터·정렬 복원
+    const pf = loadPrefs();
+    if (pf && pf.sort && SORTS[pf.sort]) state.sort = pf.sort;
+    applySettings(pf);
+  }
   state.ran = true;   // 이후 변경은 실시간 갱신
   run();              // 페이지 열면 기본값(중립형·배당) 또는 공유 링크 설정으로 결과 바로 표시
 })();

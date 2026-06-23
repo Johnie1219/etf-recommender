@@ -937,10 +937,13 @@ def recommend(
 
     # yfinance 는 종목당 네트워크 호출이라 순차로 돌리면 느리다(특히 무료 서버).
     # 종목 지표와 환율을 모두 동시에 받아 대기 시간을 크게 줄인다. (실패 시 각자 폴백)
-    with ThreadPoolExecutor(max_workers=min(16, max(1, len(wanted))) + 1) as ex:
+    with ThreadPoolExecutor(max_workers=min(16, max(1, len(wanted))) + 2) as ex:
         fx_future = ex.submit(fetch_fx)
+        bench_future = ex.submit(fetch_metrics, "VOO")  # S&P500 벤치마크
         metric_list = list(ex.map(fetch_metrics, wanted)) if wanted else []
     fx = fx_future.result()
+    bm = bench_future.result()
+    benchmark = {"ticker": "VOO", "name": "S&P 500", "ret1y": bm["ret1y"], "source": bm["source"]}
 
     rows = []
     sources = set()
@@ -1002,6 +1005,7 @@ def recommend(
         "weights": w,
         "source": overall_source,
         "fx": fx,
+        "benchmark": benchmark,
         "filters": {"dividends": dividends, "min_yield": min_yield, "top": top, "matched": matched},
         "results": rows,
         "disclaimer": (

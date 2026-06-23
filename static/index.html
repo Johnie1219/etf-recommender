@@ -180,6 +180,29 @@
     background: #2c2c2e; color: #fff; font-size: 13px; padding: 10px 16px; border-radius: 999px;
     z-index: 60; opacity: 0; transition: opacity .2s ease; pointer-events: none; }
   .toast.show { opacity: .95; }
+  /* 맨 위로 버튼 */
+  .fab { position: fixed; right: 16px; bottom: 20px; z-index: 40; width: 44px; height: 44px;
+    border-radius: 999px; border: 1px solid var(--line); background: var(--card); color: var(--ink);
+    font-size: 20px; cursor: pointer; box-shadow: 0 2px 10px rgba(0,0,0,.12); }
+  /* 비교 바 (하단 고정) */
+  .cmpbar { position: fixed; left: 50%; transform: translateX(-50%); bottom: 16px; z-index: 45;
+    max-width: 440px; width: calc(100% - 32px); background: var(--blue); color: #fff; border-radius: 999px;
+    padding: 12px 18px; display: flex; align-items: center; justify-content: space-between; gap: 12px;
+    font-size: 14px; box-shadow: 0 4px 16px rgba(0,0,0,.2); }
+  .cmpbar button { background: #fff; color: var(--blue); border: none; border-radius: 999px;
+    padding: 8px 14px; font-size: 13px; font-weight: 700; font-family: inherit; cursor: pointer; }
+  .cmpbar .cmpx { background: none; color: #fff; padding: 4px 6px; }
+  .cmpwrap { margin-top: 4px; }
+  .cmpbtn { background: none; border: 1px solid var(--line); color: var(--sub); border-radius: 999px;
+    padding: 5px 12px; font-size: 12px; font-weight: 600; font-family: inherit; cursor: pointer; }
+  .cmpbtn.on { background: var(--blue); color: #fff; border-color: var(--blue); }
+  /* 비교/도움말 표 */
+  .ctable { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .ctable th, .ctable td { border-bottom: 1px solid var(--line); padding: 9px 6px; text-align: right; }
+  .ctable th:first-child, .ctable td:first-child { text-align: left; color: var(--sub); }
+  .ctable thead th { color: var(--ink); font-weight: 700; }
+  .helpsheet h3 { font-size: 14px; margin: 16px 0 6px; }
+  .helpsheet p { font-size: 13px; color: var(--sub); line-height: 1.6; margin: 0 0 4px; }
 
   /* 실거래 추적 */
   .tradeform { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin: 6px 0 14px; }
@@ -332,6 +355,7 @@
         <p>위험 성향과 목표를 고르면, 대표 미국 ETF를 점수화해 보여줍니다.</p>
       </div>
       <div style="display:flex;align-items:flex-start;gap:8px;flex-shrink:0;">
+        <button id="helpBtn" class="themebtn" title="도움말" aria-label="도움말">?</button>
         <button id="themeToggle" class="themebtn" title="다크 모드" aria-label="다크 모드">🌙</button>
         <div class="userbar" id="userbar"></div>
       </div>
@@ -340,6 +364,8 @@
 
   <div id="banner" style="display:none;"></div>
   <div id="toast" class="toast"></div>
+  <button id="scrollTop" class="fab" hidden title="맨 위로" aria-label="맨 위로">↑</button>
+  <div id="compareBar" class="cmpbar" hidden></div>
 
   <div class="layout">
     <!-- 입력 (위) : 성향·목표·종목·필터 -->
@@ -816,6 +842,8 @@ async function toggleFav(ticker, btn) {
 document.getElementById('result').addEventListener('click', function (e) {
   const s = e.target.closest('.star');
   if (s) { toggleFav(s.dataset.ticker, s); return; }
+  const cb = e.target.closest('.cmpbtn');
+  if (cb) { toggleCompare(cb.dataset.cmp); return; }
   const cr = e.target.closest('.catrow');
   if (cr) { selectCategory(cr.dataset.cat); return; }
   const sp = e.target.closest('.spill');
@@ -957,6 +985,81 @@ const SORTS = {
 function retClass(n) { return (n === null || n === undefined) ? '' : (n >= 0 ? 'up' : 'down'); }
 function hhmm(dt) { return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0'); }
 let lastData = null, lastFetchedAt = null;
+let compareSet = [];  // 비교할 티커(최대 3)
+
+// S&P500(VOO) 대비 1년 수익률 차이
+function benchLine(r) {
+  const bm = (lastData && lastData.benchmark) ? lastData.benchmark.ret1y : null;
+  if (bm == null || r.ticker === 'VOO') return '';
+  const diff = r.ret1y - bm;
+  return '<div class="m"><span>S&amp;P500 대비</span><b class="' + retClass(diff) + '">' + (diff >= 0 ? '+' : '') + diff.toFixed(1) + '%p</b></div>';
+}
+
+// 공통 시트(모달)
+function openSheet(title, bodyHtml) {
+  const ov = document.createElement('div');
+  ov.className = 'overlay';
+  ov.addEventListener('click', function (e) { if (e.target === ov) ov.remove(); });
+  ov.innerHTML = '<div class="modal"><h2>' + title + '</h2><div style="margin-top:12px;">' + bodyHtml + '</div>' +
+    '<button class="btn" id="sheetClose" style="margin-top:18px;">닫기</button></div>';
+  document.body.appendChild(ov);
+  ov.querySelector('#sheetClose').onclick = function () { ov.remove(); };
+  return ov;
+}
+// 비교
+function toggleCompare(tk) {
+  const i = compareSet.indexOf(tk);
+  if (i >= 0) compareSet.splice(i, 1);
+  else { if (compareSet.length >= 3) { toast('최대 3개까지 비교할 수 있어요.'); return; } compareSet.push(tk); }
+  renderCompareBar();
+  if (lastData) render(lastData);
+}
+function renderCompareBar() {
+  const bar = document.getElementById('compareBar');
+  if (!compareSet.length) { bar.hidden = true; return; }
+  bar.hidden = false;
+  bar.innerHTML = '<span>⚖️ 비교 ' + compareSet.length + '개 · ' + compareSet.join(', ') + '</span>' +
+    '<span><button id="cmpGo">비교하기</button> <button class="cmpx" id="cmpClear">✕</button></span>';
+  document.getElementById('cmpGo').onclick = openCompare;
+  document.getElementById('cmpClear').onclick = function () { compareSet = []; renderCompareBar(); if (lastData) render(lastData); };
+}
+function openCompare() {
+  if (!lastData || compareSet.length < 2) { toast('비교할 종목을 2개 이상 골라주세요.'); return; }
+  const rows = lastData.results.filter(function (r) { return compareSet.indexOf(r.ticker) >= 0; });
+  const metrics = [
+    ['점수', function (r) { return r.score.toFixed(0); }],
+    ['1년 수익률', function (r) { return pct(r.ret1y); }],
+    ['원화 환산 1년', function (r) { return pct(r.ret1y_krw); }],
+    ['변동성', function (r) { return r.vol + '%'; }],
+    ['배당수익률', function (r) { return r.yield + '%'; }],
+    ['현재가', function (r) { return r.price == null ? '—' : '$' + r.price; }]
+  ];
+  let html = '<table class="ctable"><thead><tr><th></th>' +
+    rows.map(function (r) { return '<th>' + r.ticker + '</th>'; }).join('') + '</tr></thead><tbody>';
+  metrics.forEach(function (m) {
+    html += '<tr><td>' + m[0] + '</td>' + rows.map(function (r) { return '<td>' + m[1](r) + '</td>'; }).join('') + '</tr>';
+  });
+  html += '</tbody></table><p class="hint" style="margin-top:10px;">참고용입니다. 점수는 현재 성향·목표 기준.</p>';
+  openSheet('종목 비교', html);
+}
+// 도움말
+function openHelp() {
+  openSheet('도움말', '<div class="helpsheet">' +
+    '<h3>이 앱은?</h3><p>위험 성향·투자 목표를 고르면 대표 미국 ETF를 점수화해 보여줘요. 교육·참고용이며 투자 권유가 아니에요.</p>' +
+    '<h3>점수(0~100)</h3><p>수익성·배당·안정성 세부점수를 목표·성향 가중치로 합산해요(달러 기준).</p>' +
+    '<p>수익성=(1년수익률+10)/50 · 배당=배당수익률/5 · 안정성=(35−변동성)/35, 각 0~100 환산.</p>' +
+    '<h3>실시간/기본값</h3><p>시세는 실시간 조회하고, 실패하면 대략 기본값으로 동작하며 “기본값”으로 표시해요.</p>' +
+    '<h3>환율·원화</h3><p>실시간 USD/KRW로 원화를 환산해요. 점수엔 환율을 넣지 않아요(참고용).</p>' +
+    '<h3>★찜·실거래</h3><p>이 기기(브라우저)에 저장돼요. 세금·매매수수료는 반영하지 않아요.</p>' +
+    '</div>');
+}
+document.getElementById('helpBtn').addEventListener('click', openHelp);
+// 맨 위로
+(function () {
+  const fab = document.getElementById('scrollTop');
+  window.addEventListener('scroll', function () { fab.hidden = window.scrollY < 300; });
+  fab.addEventListener('click', function () { window.scrollTo({ top: 0, behavior: 'smooth' }); });
+})();
 
 // 미니 차트(스파크라인) — 야후/구글 파이낸스/Finviz 벤치마킹. 상승=빨강/하락=파랑(한국식)
 function sparkSvg(spark, ret) {
@@ -1001,7 +1104,9 @@ function cardHtml(r, hero, rank) {
       '<div class="m"><span>원화 환산 1년</span><b class="' + retClass(r.ret1y_krw) + '">' + pct(r.ret1y_krw) + '</b></div>' +
       '<div class="m"><span>변동성</span><b>' + r.vol + '%</b></div>' +
       '<div class="m"><span>배당수익률</span><b>' + r.yield + '%</b></div>' +
+      benchLine(r) +
     '</div>' +
+    '<div class="cmpwrap"><button class="cmpbtn' + (compareSet.indexOf(r.ticker) >= 0 ? ' on' : '') + '" data-cmp="' + r.ticker + '">⚖️ 비교' + (compareSet.indexOf(r.ticker) >= 0 ? ' ✓' : '') + '</button></div>' +
     '<button class="more" data-more>점수 근거 자세히 ▾</button>' +
     '<div class="details" hidden>' +
       '<div class="dscore">세부점수 — 수익 ' + r.scores.R + ' · 배당 ' + r.scores.D + ' · 안정 ' + r.scores.S + ' (각 0~100)</div>' +

@@ -900,6 +900,12 @@ document.getElementById('result').addEventListener('click', function (e) {
   if (cb) { toggleCompare(cb.dataset.cmp); return; }
   const cr = e.target.closest('.catrow');
   if (cr) { selectCategory(cr.dataset.cat); return; }
+  const rf = e.target.closest('[data-reset-filters]');
+  if (rf) {
+    setSeg('divSeg', 'dividends', 'all'); setSeg('minYieldSeg', 'minYield', '0'); setSeg('topSeg', 'top', '0');
+    const g = document.getElementById('minYieldGroup'); g.style.opacity = ''; g.style.pointerEvents = '';
+    if (state.ran) run(); toast('필터를 초기화했어요'); return;
+  }
   const ex = e.target.closest('[data-export-csv]');
   if (ex) { exportResultsCsv(); return; }
   const sp = e.target.closest('.spill');
@@ -1278,7 +1284,8 @@ function render(d) {
 
   if (!d.results.length) {
     document.getElementById('result').innerHTML = header +
-      '<div class="empty">조건에 맞는 종목이 없습니다.<br/>배당 필터나 최소 배당수익률을 완화해 보세요.</div>';
+      '<div class="empty">조건에 맞는 종목이 없습니다.<br/>배당 필터나 최소 배당수익률을 완화해 보세요.' +
+      '<div style="margin-top:12px;"><button class="pill" data-reset-filters style="display:inline-block;width:auto;padding:8px 16px;">필터 초기화</button></div></div>';
     if (chart) { chart.destroy(); chart = null; }
     return;
   }

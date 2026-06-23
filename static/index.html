@@ -77,6 +77,18 @@
     font-family: ui-monospace, Menlo, monospace; font-size: 12px;
   }
 
+  .intro {
+    max-width: 460px; margin: 8px auto 0; padding: 10px 14px;
+    background: var(--hero); border: 1px solid var(--line); border-radius: 12px;
+    font-size: 13px; color: var(--ink); line-height: 1.5;
+    display: flex; align-items: center; gap: 10px;
+  }
+  .intro b { font-weight: 600; }
+  .introx {
+    margin-left: auto; flex-shrink: 0; background: none; border: none; cursor: pointer;
+    font-size: 20px; line-height: 1; color: var(--sub); font-family: inherit; padding: 0 2px;
+  }
+
   .layout {
     max-width: 460px;
     margin: 0 auto;
@@ -370,6 +382,10 @@
   </header>
 
   <div id="banner" style="display:none;"></div>
+  <div id="intro" class="intro" hidden>
+    <span>처음이세요? 위의 <b>⚡ 빠른 시작</b>으로 한 번에 맞추거나, <b>📚</b>에서 ETF 기초를 볼 수 있어요. 교육·참고용이에요.</span>
+    <button id="introClose" class="introx" aria-label="닫기">×</button>
+  </div>
   <div id="toast" class="toast"></div>
   <button id="scrollTop" class="fab" hidden title="맨 위로" aria-label="맨 위로">↑</button>
   <div id="compareBar" class="cmpbar" hidden></div>
@@ -1199,6 +1215,15 @@ function openEdu() {
     '</div>');
 }
 document.getElementById('eduBtn').addEventListener('click', openEdu);
+// 첫 방문 안내(한 번만 노출, 닫으면 다시 안 뜸)
+(function () {
+  const INTRO_KEY = 'etf_seen_intro';
+  const box = document.getElementById('intro');
+  try { if (!localStorage.getItem(INTRO_KEY)) box.hidden = false; } catch (e) {}
+  document.getElementById('introClose').addEventListener('click', function () {
+    box.hidden = true; try { localStorage.setItem(INTRO_KEY, '1'); } catch (e) {}
+  });
+})();
 // 맨 위로
 (function () {
   const fab = document.getElementById('scrollTop');

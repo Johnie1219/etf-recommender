@@ -140,6 +140,7 @@
   }
   .pill:hover { border-color: #c7c7cc; }
   .pill.active { background: var(--blue); color: #fff; border-color: var(--blue); }
+  .pill.ghost { padding: 8px 14px; font-size: 13px; color: var(--sub); }
 
   /* 로그인 사용자 표시 / 로그아웃 */
   .hrow { display: flex; justify-content: space-between; align-items: flex-start; gap: 12px; }
@@ -482,6 +483,13 @@
           <details id="tradeListWrap" style="margin-top:10px;" hidden>
             <summary style="font-size:13px;color:var(--blue);cursor:pointer;">거래 내역 보기</summary>
             <div id="tradeList"></div>
+            <div id="tradeBackup" style="display:flex;gap:8px;flex-wrap:wrap;margin-top:10px;">
+              <button type="button" class="pill ghost" id="tExport">CSV 내보내기</button>
+              <button type="button" class="pill ghost" id="tBackup">백업(.json)</button>
+              <button type="button" class="pill ghost" id="tRestoreBtn">복원</button>
+              <input type="file" id="tRestore" accept="application/json,.json" hidden />
+            </div>
+            <p class="hint" style="margin-top:6px;">거래 기록은 이 기기(브라우저)에만 저장돼요. 기기를 바꾸거나 캐시를 지우면 사라지니 가끔 백업해 두세요.</p>
           </details>
         </div>
 
@@ -1063,7 +1071,7 @@ document.getElementById('helpBtn').addEventListener('click', openHelp);
 // ETF 기초 알아보기 — 처음 보는 사람도 이해할 수 있게. 모두 교육·참고용.
 function openEdu() {
   openSheet('ETF 기초 알아보기', '<div class="helpsheet">' +
-    '<p style="color:var(--mut);">아래는 교육·참고용 설명이에요. 특정 종목 매수·매도 권유가 아니며, 모든 투자에는 원금 손실 위험이 있어요.</p>' +
+    '<p style="color:var(--sub);">아래는 교육·참고용 설명이에요. 특정 종목 매수·매도 권유가 아니며, 모든 투자에는 원금 손실 위험이 있어요.</p>' +
     '<h3>ETF가 뭔가요?</h3><p>여러 주식·채권을 한 바구니에 담아 거래소에서 주식처럼 사고파는 상품이에요. 한 종목만 사도 자동으로 분산이 돼요. 다만 바구니 안이 한 분야(예: 반도체)에만 쏠려 있으면 분산 효과는 작아요.</p>' +
     '<h3>1년 수익률</h3><p>최근 1년간 가격이 얼마나 올랐는지(배당 포함, 달러 기준)예요. 과거 성과일 뿐 미래를 보장하지 않아요. 이 앱의 점수에서 “수익성”은 이 값으로 계산해요.</p>' +
     '<h3>배당수익률</h3><p>가격 대비 한 해 배당을 얼마 주는지(%)예요. 높을수록 좋아 보이지만, 가격이 떨어져 비율만 높아 보이는 경우도 있어요. 배당엔 보통 세금이 붙는데 이 앱은 세금을 반영하지 않아요.</p>' +
@@ -1511,6 +1519,48 @@ document.getElementById('tradePanel').addEventListener('change', function (e) {
 document.getElementById('tradePanel').addEventListener('click', function (e) {
   const del = e.target.closest('[data-del-trade]');
   if (del) { saveTrades(loadTrades().filter(function (t) { return t.id !== del.dataset.delTrade; })); renderTrades(); }
+});
+// 거래 백업/복원 — 이 기기에만 저장되므로 직접 내려받아 보관할 수 있게
+function downloadBlob(name, text, mime) {
+  const blob = new Blob([text], { type: mime });
+  const url = URL.createObjectURL(blob), a = document.createElement('a');
+  a.href = url; a.download = name; document.body.appendChild(a); a.click();
+  document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+function todayTag() { return new Date().toISOString().slice(0, 10); }
+document.getElementById('tExport').addEventListener('click', function () {
+  const t = loadTrades();
+  if (!t.length) { toast('내보낼 거래가 없어요'); return; }
+  const esc = function (v) { v = String(v == null ? '' : v); return /[",\n]/.test(v) ? '"' + v.replace(/"/g, '""') + '"' : v; };
+  const rows = [['날짜', '구분', '티커', '수량', '단가(USD)']];
+  t.slice().sort(function (a, b) { return (a.date || '') < (b.date || '') ? -1 : 1; })
+    .forEach(function (r) { rows.push([r.date || '', (r.type || 'buy') === 'sell' ? '매도' : '매수', r.ticker, r.qty, r.price]); });
+  const csv = '﻿' + rows.map(function (r) { return r.map(esc).join(','); }).join('\r\n');
+  downloadBlob('거래내역_' + todayTag() + '.csv', csv, 'text/csv;charset=utf-8;');
+});
+document.getElementById('tBackup').addEventListener('click', function () {
+  const t = loadTrades();
+  if (!t.length) { toast('백업할 거래가 없어요'); return; }
+  downloadBlob('거래백업_' + todayTag() + '.json', JSON.stringify({ v: 1, trades: t }, null, 2), 'application/json');
+});
+document.getElementById('tRestoreBtn').addEventListener('click', function () { document.getElementById('tRestore').click(); });
+document.getElementById('tRestore').addEventListener('change', function (e) {
+  const f = e.target.files && e.target.files[0]; if (!f) return;
+  const reader = new FileReader();
+  reader.onload = function () {
+    let data;
+    try { data = JSON.parse(reader.result); } catch (err) { toast('파일을 읽을 수 없어요'); return; }
+    const arr = Array.isArray(data) ? data : (data && Array.isArray(data.trades) ? data.trades : null);
+    if (!arr) { toast('거래 백업 파일이 아니에요'); return; }
+    const clean = arr.filter(function (t) { return t && t.ticker && t.qty > 0 && t.price >= 0; })
+      .map(function (t) {
+        return { id: t.id || (Date.now() + '' + Math.floor(Math.random() * 1000)), date: t.date || '', ticker: String(t.ticker), qty: +t.qty, price: +t.price, type: t.type === 'sell' ? 'sell' : 'buy' };
+      });
+    if (!clean.length) { toast('복원할 거래가 없어요'); return; }
+    if (!confirm('지금 거래 ' + loadTrades().length + '건을 백업 ' + clean.length + '건으로 바꿀까요? (기존 기록은 사라져요)')) return;
+    saveTrades(clean); renderTrades(); toast('거래 ' + clean.length + '건을 복원했어요');
+  };
+  reader.readAsText(f); e.target.value = '';
 });
 // '내 투자' 요약 누르면 실거래 탭으로 이동
 document.getElementById('portfolioSummary').addEventListener('click', function () {

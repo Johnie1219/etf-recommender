@@ -911,8 +911,21 @@ function updateSelCount() {
 }
 
 // --- 추천 실행 ---
+// 마지막으로 쓴 성향·목표·필터를 기억(종목 선택은 '전체 선택' 기본 유지를 위해 저장하지 않음)
+const PREF_KEY = 'etf_prefs';
+function savePrefs() {
+  try {
+    localStorage.setItem(PREF_KEY, JSON.stringify({
+      risk: state.risk, goal: state.goal, dividends: state.dividends,
+      minYield: state.minYield, top: state.top
+    }));
+  } catch (e) {}
+}
+function loadPrefs() { try { return JSON.parse(localStorage.getItem(PREF_KEY) || 'null'); } catch (e) { return null; } }
+
 async function run() {
   updateSelCount();
+  savePrefs();
   const tickers = selectedTickers();
   const res = document.getElementById('result');
   if (tickers.length === 0) {
@@ -1579,6 +1592,7 @@ document.getElementById('portfolioSummary').addEventListener('click', function (
   renderPresets();
   const fromUrl = queryToSettings(location.search.slice(1));
   if (fromUrl) { applySettings(fromUrl); setCatActive(null); }
+  else { applySettings(loadPrefs()); }   // URL 공유가 없으면 마지막에 쓴 성향·목표·필터 복원
   state.ran = true;   // 이후 변경은 실시간 갱신
   run();              // 페이지 열면 기본값(중립형·배당) 또는 공유 링크 설정으로 결과 바로 표시
 })();

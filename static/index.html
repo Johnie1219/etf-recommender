@@ -636,9 +636,14 @@ document.getElementById('quickStart').addEventListener('click', function (e) {
   setSeg('divSeg', 'dividends', preset.dividends);
   setSeg('minYieldSeg', 'minYield', preset.minYield);
   setSeg('topSeg', 'top', preset.top);
-  // 무배당만 동기화(여기선 항상 켜짐 상태라 복원)
-  const g = document.getElementById('minYieldGroup'); g.style.opacity = ''; g.style.pointerEvents = '';
-  // 빠른 시작은 종목 선택을 건드리지 않고 '전체 선택' 기본을 유지
+  // 최소배당 비활성 동기화: 무배당만일 때만 흐리게(preset 기준으로 정확히)
+  const off = preset.dividends === 'no';
+  const g = document.getElementById('minYieldGroup');
+  g.style.opacity = off ? '0.4' : ''; g.style.pointerEvents = off ? 'none' : '';
+  // 빠른 시작은 시나리오라 종목을 '전체 선택'으로 되돌려 결과가 예측 가능하게 함
+  favOnly = false;
+  document.querySelectorAll('#checks input').forEach(function (c) { c.checked = true; });
+  setCatActive('전체'); updateFavBtn();
   document.getElementById('quickStart').querySelectorAll('.spill').forEach(function (p) { p.classList.toggle('active', p === b); });
   if (state.ran) run();
   toast(b.textContent.trim() + ' 적용');
@@ -1524,6 +1529,9 @@ async function renderTrades() {
     wrap.innerHTML = '<p style="color:var(--sub);font-size:13px;">아직 매수 기록이 없습니다. 위에서 추가해 보세요.</p>';
     totalEl.innerHTML = ''; listWrap.hidden = true;
     document.getElementById('portfolioSummary').hidden = true;
+    // 마지막 거래까지 지웠으면 추천 카드의 '보유 중' 배지도 즉시 정리
+    if (heldTickers.size && lastData) { heldTickers = new Set(); render(lastData); }
+    else heldTickers = new Set();
     return;
   }
   // 시간순으로 매수/매도 처리(평균단가법). qty/cost=현재 보유, realized=실현손익

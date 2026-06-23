@@ -308,6 +308,8 @@
   .herocard { border: 1.5px solid var(--blue); background: var(--hero); }
   .herobadge { display: inline-block; background: var(--blue); color: #fff; font-size: 11px; font-weight: 700;
     padding: 2px 8px; border-radius: 999px; margin-right: 6px; vertical-align: middle; }
+  .heldbadge { display: inline-block; border: 1px solid var(--blue); color: var(--blue); font-size: 11px; font-weight: 600;
+    padding: 1px 7px; border-radius: 999px; vertical-align: middle; }
   /* 순위 번호 (토스 랭킹 리스트) */
   .rank { display: inline-block; min-width: 18px; color: var(--blue); font-weight: 700; font-size: 15px; margin-right: 6px; }
   /* 테마 순위 (토스 '지금 뜨고 있는 카테고리') */
@@ -1095,6 +1097,20 @@ function retClass(n) { return (n === null || n === undefined) ? '' : (n >= 0 ? '
 function hhmm(dt) { return dt.getHours().toString().padStart(2, '0') + ':' + dt.getMinutes().toString().padStart(2, '0'); }
 let lastData = null, lastFetchedAt = null;
 let compareSet = [];  // 비교할 티커(최대 3)
+let heldTickers = new Set();  // 실거래 기준 현재 보유 중인 티커
+
+// 실거래(평균단가법) 기준 현재 보유 중(수량>0)인 티커 집합
+function heldTickerSet() {
+  const ord = loadTrades().slice().sort(function (a, b) { return ((a.date || '') + a.id) < ((b.date || '') + b.id) ? -1 : 1; });
+  const agg = {};
+  ord.forEach(function (t) {
+    const a = agg[t.ticker] || (agg[t.ticker] = { qty: 0 });
+    a.qty += (t.type || 'buy') === 'sell' ? -Math.min(t.qty, a.qty) : t.qty;
+  });
+  const s = new Set();
+  Object.keys(agg).forEach(function (k) { if (agg[k].qty > 1e-7) s.add(k); });
+  return s;
+}
 
 // S&P500(VOO) 대비 1년 수익률 차이
 function benchLine(r) {
@@ -1213,7 +1229,9 @@ function cardHtml(r, hero, rank) {
   const badge = hero ? '<span class="herobadge">🏆 1위</span> ' : '<span class="rank">' + rank + '</span>';
   return '<div class="card' + (hero ? ' herocard' : '') + '">' +
     '<div class="top">' +
-      '<div class="name">' + badge + r.ticker + ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
+      '<div class="name">' + badge + r.ticker +
+        (heldTickers.has(r.ticker) ? ' <span class="heldbadge">보유 중</span>' : '') +
+        ' <small>' + r.name + ' · ' + r.cat + '</small></div>' +
       '<div style="display:flex;align-items:center;gap:10px;">' +
         '<button class="star' + (favorites.has(r.ticker) ? ' on' : '') + '" data-ticker="' + r.ticker + '" title="즐겨찾기" aria-label="즐겨찾기">★</button>' +
         '<div class="score">' + r.score.toFixed(0) + '<span style="font-size:12px;color:var(--sub)"> /100</span></div>' +
@@ -1275,6 +1293,7 @@ function themeRankHtml(results) {
 function render(d) {
   lastData = d;
   lastFetchedAt = new Date();
+  heldTickers = heldTickerSet();
   const w = d.weights;
   const header =
     '<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:10px;">' +
@@ -1583,6 +1602,10 @@ async function renderTrades() {
     const tag = (t.type === 'sell') ? '<span class="down">매도</span>' : '<span class="up">매수</span>';
     return '<div class="trow"><span>' + t.date + ' · ' + tag + ' ' + t.ticker + ' · ' + t.qty + '주 @ $' + t.price + '</span><a data-del-trade="' + t.id + '">삭제</a></div>';
   }).join('');
+  // 보유 변동을 추천 결과 카드의 '보유 중' 배지에도 반영
+  const held = heldTickerSet();
+  const changed = held.size !== heldTickers.size || Array.from(held).some(function (x) { return !heldTickers.has(x); });
+  if (lastData && changed) render(lastData);
 }
 
 // 보유 종목 평가액 배분 도넛 (Trading212/퍼스널캐피털 벤치마킹)
